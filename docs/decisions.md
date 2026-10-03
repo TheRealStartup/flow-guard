@@ -49,3 +49,23 @@ US-1.1 asks for overhead under 300 ms at p95. The Jev check can't meet that.
 
 ## D5 · What "airtight" means · PRINCIPLE (Paul, Sun ~01:10)
 First and foremost, each scenario must make sense as a business case, use the language of the business, and get its details right: documents, thresholds, roles, data flows. Fallbacks and mocks are secondary.
+
+## D6 · Data classes are enforced at every model boundary, Jev included (issue #13)
+Jev runs at api.typesafe.ai, so it is an external model destination, not an internal check. Masking cards, IBANs and
+secrets does not remove confidential business facts, and a user cleared to read a deal is not thereby cleared to send it
+to a model provider.
+
+**Rule:** every message gets a class (`public < internal < P2 < DP30`, `classification` in policy.yaml) from a trusted
+source: the tool that produced it, or a restricted term it names. Tokenising never lowers it. Content above
+`max_to_model` (or a model's own `max_class`) is withheld with the neutral barrier message. Content the model may
+receive but Jev may not (`injection.jev.max_class`, never above `max_to_model`) cannot be injection-checked, so the
+request is blocked, whatever `on_error` says. Missing classes or limits fail closed; a misspelt class keeps the last
+good policy. Every request re-classifies the whole history, so a lowered limit applies to earlier messages too.
+
+**Defaults:** Jev `internal`; `get_client_file` P2, so the onboarding flow stops at the client file unless
+`injection.jev.max_class` is raised to P2 (a live-edit demo). The Falcon deal and `query_datalake` are DP30: no model
+gets them, the deal team included.
+
+**Known limit:** a tool result's class comes from the call id this gateway let through. For history the gateway never
+saw (a client that starts mid-conversation), it falls back to the tool name the agent claims. The MCP gateway removes
+that gap, because it sees the tool's own result.

@@ -35,6 +35,7 @@ controls:
     threshold: 0.80   # Jev's probability that the text tries to instruct the agent
     timeout_s: 8       # Jev measured at 2–4.5 s on Sat afternoon (advertised 70–500 ms)
     on_error: block
+    max_class: internal  # Jev is an external service (api.typesafe.ai): it never receives P2/DP30 (see classification)
   spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
     action: flag      # if tool data fakes our marker to break out of the block: flag | block (it is escaped either way)
     mode: delimit     # delimit | off
@@ -95,7 +96,7 @@ roles:
 barriers:
   public_message: "Some results are outside your access."
   restricted:
-    - {id: falcon, terms: ["Project Falcon", "Kestrel Dynamics", "KSTL"]}
+    - {id: falcon, class: DP30, terms: ["Project Falcon", "Kestrel Dynamics", "KSTL"]}
 
 # Limits on tool arguments: a tool may only be called for things inside the user's own scope.
 scopes:
@@ -111,3 +112,35 @@ egress:
   tools: {Bash: command}                           # tool -> the argument that holds the shell command
   patterns: ['\b(curl|wget|nc|ncat|scp|rsync|ftp)\b']
   allow_hosts: [localhost, 127.0.0.1, pypi.org, files.pythonhosted.org]
+
+# Data classes (P2/DP30, issue #13), lowest first. Before any model or judge sees a message, it gets a class from a
+# trusted source: the tool that returned it (tools below; a tool not listed here is unclassified) or a restricted term
+# it names (barriers above). Tokenising identifiers never lowers it. Content above a destination's limit is withheld
+# with the neutral barrier message (action: redact) or stops the request (action: block). Limits: max_to_model for
+# every model, a model's own `max_class` below that, and `max_class` on injection.jev for the external judge. A tool
+# result that may reach the model but not Jev cannot be injection-checked, so that request is blocked.
+classification:
+  levels: [public, internal, P2, DP30]
+  max_to_model: P2
+  default: internal                  # user, system and assistant text that names no restricted term
+  action: redact
+  tools:
+    get_customer: internal           # card and IBAN are tokens by the time the model sees them
+    send_email: internal
+    charge_card: internal
+    get_client_file: P2              # client onboarding file (owners, documents, settlement account)
+    screen_sanctions: internal
+    search_documents: internal       # restricted deal documents in it are DP30 by their terms
+    query_datalake: DP30             # data-lake rows: never to any model
+    list_files: internal
+    read_file: internal
+    run_tests: internal
+    http_post: internal
+    Read: internal
+    Glob: internal
+    Grep: internal
+    Edit: internal
+    Write: internal
+    Bash: internal
+    WebFetch: internal
+    TodoWrite: internal

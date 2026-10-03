@@ -1,7 +1,7 @@
 """The policy engine. Adapters (today: the model proxy) hand it the traffic; it decides.
 
-Request side (agent -> model): model allowlist, budget, signatures, PII/secret redaction,
-Jev injection check, then spotlighting (tool results marked as data). Response side (model -> agent):
+Request side (agent -> model): model allowlist, budget, information barrier, data classes (nothing above a model's or
+Jev's limit reaches it), signatures, PII/secret redaction, Jev injection check, then spotlighting (tool results marked as data). Response side (model -> agent):
 role -> tool access, signatures on tool arguments, data-flow (sensitive data -> external sink), tool-call budget, and putting
 real values back for the few tools allowed to receive them.
 """
@@ -182,6 +182,64 @@ class Engine:
             pass
         return f"[WITHHELD: {p.barrier_message}]", [d]
 
+    def _source_class(self, p: Policy, s: Session, msg: dict[str, Any], claimed: dict[str, str]) -> str | None:
+        """Where a message came from sets its class, never what it says about itself. A tool result has the class of
+        its tool, preferring the call this gateway let through; a result whose call id we issued for another tool is
+        unclassified. History the gateway never saw falls back to the tool name the agent claims (docs/decisions.md D6)."""
+        if msg.get("role") != "tool":
+            return p.classification.get("default")
+        cid = msg.get("tool_call_id")
+        issued, named = s.issued.get(cid), claimed.get(cid)
+        if issued and named and issued != named:
+            return None
+        return p.tool_class(issued or named)
+
+    @staticmethod
+    def _term_rank(p: Policy, text: str) -> int:
+        """Restricted terms in the text as sent, and in its JSON-decoded form (so `\\u004bestrel` cannot hide a name)."""
+        rank = p.term_rank(text)
+        try:
+            rank = max(rank, p.term_rank(json.dumps(json.loads(text), ensure_ascii=False)))
+        except (ValueError, TypeError):
+            pass
+        return rank
+
+    def _class_gate(self, p: Policy, s: Session, text: str, src: str | None, limit: int, where: str,
+                    dest: str) -> tuple[str, list[Decision], int]:
+        """Data classes (issue #13): content above `limit` never reaches `dest`. Masked identifiers do not lower the class:
+        it comes from the source and the restricted terms. Returns the text to send, the decision, and the class of what
+        is left (-1: nothing). The decision names classes only, never the withheld content."""
+        t = time.perf_counter()
+        src_rank = p.rank(src)
+        rank = max(src_rank, self._term_rank(p, text))
+        if rank <= limit:
+            if p.rank(p.classification.get("default")) < rank < len(p.levels):
+                s.labels.add(p.level(rank))  # the flow rule then keeps it inside (mode: session)
+            return text, [], rank
+        action = p.classification.get("action", "redact")
+        cap = p.level(limit) if limit >= 0 else "no limit set (fail closed)"
+        msg = p.barrier_message
+        left = -1
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            doc = None
+        if action == "block":
+            out = text
+        elif isinstance(doc, list) and src_rank <= limit:  # a list of documents: withhold only the ones above the limit
+            kept = [it for it in doc if self._term_rank(p, json.dumps(it)) <= limit]
+            left = max([src_rank, *(self._term_rank(p, json.dumps(it)) for it in kept)])
+            out = json.dumps([*kept, {"withheld": msg}])
+        elif isinstance(doc, dict):
+            out = json.dumps({"withheld": msg})  # keeps tool-call arguments valid JSON
+        else:
+            out = f"[WITHHELD: {msg}]"
+        d = Decision("classification", action, where, f"{p.level(rank)} content is above the {cap} limit for {dest}; withheld",
+                     (time.perf_counter() - t) * 1000, excerpt=f"[WITHHELD: {msg}]")
+        if action != "block" and left > p.rank(p.classification.get("default")):
+            s.labels.add(p.level(left))
+        return out, [d], left
+
     def _breakout(self, p: Policy, text: str, where: str) -> list[Decision]:
         """Tool data containing our own data marker is trying to end the data block early and speak as the system."""
         if where != "tool_result" or not p.spotlight or p.action("spotlight") == "allow" or not MARKER_RE.search(text):
@@ -257,17 +315,27 @@ class Engine:
                 return stop(next(d for d in ds if d.action == "block"))
             ex.decisions += ds
 
-        to_judge: list[tuple[dict[str, Any], str, str]] = []  # (message, hash, where)
-        for msg in body.get("messages", []):
+        msgs = body.get("messages", [])
+        claimed = {tc.get("id"): tc.get("function", {}).get("name", "")
+                   for m in msgs if m.get("role") == "assistant" for tc in m.get("tool_calls") or []}
+        limit = p.model_limit(model)
+        to_judge: list[tuple[dict[str, Any], str, str, int]] = []  # (message, hash, where, class rank)
+        for msg in msgs:
             where = WHERE.get(msg.get("role", ""), "prompt")
             h = hashlib.sha256(json.dumps(msg, sort_keys=True).encode()).hexdigest()
             new = h not in s.seen
             s.seen.add(h)
             if h in s.quarantined:
                 msg["content"] = s.quarantined[h]
-                continue
+            # Every message, old ones too, is classified on every request: a lowered limit applies to the whole history.
+            src, rank = self._source_class(p, s, msg, claimed), -1
             for get, set_ in list(_text_parts(msg)):
                 text, ds0 = self._barrier(p, s, get(), where) if where in ("tool_result", "prompt") else (get(), [])
+                text, dsc, r = self._class_gate(p, s, text, src, limit, where, f"model {model}")
+                rank = max(rank, r)
+                if dsc and dsc[0].action == "block":
+                    return stop(dsc[0])
+                ex.decisions += dsc  # logged every time: withholding is something this request did
                 text, ds = self._signatures(p, text, where) if msg.get("role") != "system" else (text, [])
                 text, ds2 = self._redact(p, s, text, where)
                 ds = ds0 + ds + self._breakout(p, text, where)
@@ -278,13 +346,23 @@ class Engine:
                 blocked = next((d for d in ds + ds2 if d.action == "block"), None)
                 if blocked:
                     return stop(blocked)
-            if new and where in ("prompt", "tool_result") and msg.get("role") != "system":
-                to_judge.append((msg, h, where))
+            if h not in s.judged and where in ("prompt", "tool_result") and msg.get("role") != "system":
+                to_judge.append((msg, h, where, rank))
 
         if to_judge and p.action("injection.jev") != "allow":
-            blocked = await self._judge_all(p, s, ex, to_judge)
+            # Jev is an external destination too. What it may not receive cannot be checked, and an unchecked message
+            # never goes through: no skipping, whatever on_error says. Not marked judged, so a retry is blocked again.
+            jl, top = p.judge_limit(), max(r for *_, r in to_judge)
+            if top > jl:
+                where = next(w for _, _, w, r in to_judge if r == top)
+                cap = p.level(jl) if jl >= 0 else "no limit set (fail closed)"
+                return stop(Decision("injection.jev", "block", where,
+                                     f"{p.level(top)} content may not be sent to the external injection check (limit {cap}), "
+                                     "and no other check is authorised for it", excerpt=f"[WITHHELD: {p.barrier_message}]"))
+            blocked = await self._judge_all(p, s, ex, [(m, h, w) for m, h, w, _ in to_judge])
             if blocked:
                 return stop(blocked)
+            s.judged.update(h for _, h, _, _ in to_judge)
 
         ex.spotlighted = self._spotlight(p, s, body)
         ex.controls_ms = (time.perf_counter() - t0) * 1000
@@ -414,6 +492,8 @@ class Engine:
                     notes.append(f"⛔ AI Control Layer blocked `{name}`: {block.reason} [{block.control}]")
                     continue
                 s.tool_calls += 1
+                if tc.get("id"):
+                    s.issued[tc["id"]] = name  # the result that comes back takes this tool's class, whatever the agent claims
                 if name in p.sinks("detokenize") and TOKEN_RE.search(args):
                     fn["arguments"] = s.detokenize(args)
                     call["outcome"] = "allowed_with_real_values"
