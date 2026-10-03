@@ -11,6 +11,7 @@ from pathlib import Path
 
 from prompts import SYSTEM
 
+import datalake
 from fixtures import (
     quarantined,  # prompt-injection test data, kept out of the code (demo/quarantine/)
 )
@@ -70,6 +71,7 @@ TOOLS = [
         "name": "send_email", "description": "Send an email to any address.",
         "parameters": {"type": "object", "properties": {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}},
                        "required": ["to", "subject", "body"]}}},
+    datalake.TOOL,
 ]
 
 
@@ -86,6 +88,8 @@ def run_tool(name: str, args: dict) -> str:
         words = {w.strip(".,'s").lower() for w in str(args.get("query", "")).split() if len(w) > 3}
         hits = [d for d in DEAL_ROOM if words & {w.strip(".,()").lower() for w in (d["title"] + " " + d["text"]).split()}]
         return json.dumps(hits or DEAL_ROOM)
+    if name == "query_datalake":
+        return datalake.run_query(str(args.get("query", "")))
     if name == "send_email":
         with OUTBOX.open("a") as f:
             f.write(json.dumps(args) + "\n")

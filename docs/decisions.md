@@ -70,7 +70,17 @@ gets them, the deal team included.
 saw (a client that starts mid-conversation), it falls back to the tool name the agent claims. The MCP gateway removes
 that gap, because it sees the tool's own result.
 
-## D7 · HR: no model judges employees; personnel files reach no model (`access.purpose`, HR card)
+## D7 · Data lake: named queries, refused before they run, labels verified (first demo)
+The agent never writes a query; it names one from `datalake.queries` in policy.yaml (`demo/datalake.py` holds the
+synthetic datasets). The gateway refuses a call before it runs if the query is unknown, the user's role may not run
+it, or its result could not be sent on (above the model's limit, or above Jev's while the AI check is on). Every
+refusal has the same reason, so it reveals nothing about which datasets exist, their class or who may see them.
+The lake labels each result; the gateway takes the class from the query it let through (not from the arguments the
+agent echoes back) and withholds a result whose label is missing or differs. A lower-class view of a dataset exists
+only as a declared transformation: `sector_counts` gives the deal team counts per sector, groups under 3 dropped,
+never the deals. The public side gets no pipeline view at all, because a count of pending deals is MNPI to them.
+
+## D8 · HR: no model judges employees; personnel files reach no model (`access.purpose`, HR card)
 HR may use the agent for administration and policy questions, never to evaluate, rank, rate, review or decide on
 employees (a decision about a person is made by a person). Personnel files hold salary, health and manager notes.
 
@@ -82,13 +92,18 @@ on. It stops a request when:
   `ranking` (case, spaces, `-` and `_` ignored, so `Performance Review` and `termination-letter` count);
 - any message of the conversation matches one of the rule's signatures (rank / rate / evaluate / performance review /
   fire / who to let go, near an employee reference such as `E-1001`, "my team", "these employees"; a Polish variant
-  too), whatever the header claims. The whole history is searched on every request, so a request that once went
+  too; and people named in the prompt: "Should we fire Maria?", "Can we let Maria go?", "Rank Alice and Bob by
+  performance", in any capitalisation), whatever the header claims. The whole history is searched on every request, so a request that once went
   through (rule off at the time) is stopped when it is replayed after a live reload. Tool results are searched only if
   their source class lets them reach the model; a record that is withheld anyway cannot carry a request to the model,
   and a note in it that mentions a review must not stop admin work.
 The denial names the rule and the signature id, never the request text (excerpt `[WITHHELD: request text not
 recorded]`), so the audit log, the API answer and Try it do not repeat it. Ordinary work is not affected: "rank these
-cities", "sort the rates table", "what is the parental leave policy?" pass, and other roles are not checked at all.
+cities", "rank the employee benefit options", "should we fire the analytics event…", "sort the rates table", "what is
+the parental leave policy?" pass, and other roles are not checked at all. The handbook (`demo/hr.py`) is a synthetic
+sample company policy with fictional rules, not real leave or employment-law requirements. Try it shows a tool-result
+preview only when the tool's class and the default class are both known levels and the tool is not above the default;
+anything unclassified, misspelt or missing is withheld.
 
 **Personnel files:** `get_employee` is DP30 (its class comes from `classification.tools`, set out of band, never from
 the record), scoped to the user's `allowed_employees` (`access.scope`: the call never runs outside them), and listed in
@@ -104,7 +119,9 @@ as a policy change.
 
 **Known limits:** the signatures are deterministic regexes, not a semantic guarantee. They catch the plain ways of
 asking (and invisible or full-width characters, JSON escapes), not paraphrases ("who would you keep if budgets were
-cut?"), other languages than English and Polish, or look-alike letters from other scripts. They may also stop a
+cut?", "fire Maria." as a bare command, "Maria or Bob: who stays?"), other languages than English and Polish, or
+look-alike letters from other scripts. A named person is recognised only by the shape of the sentence, so a technical
+"should we fire telemetry now?" may be stopped for HR users. They may also stop a
 borderline policy question that names a specific employee next to "termination". No model, ours or Jev, is used to
 judge HR prompts or records: an external judge would itself be a model processing the records. The purpose header is
 what the caller states; the rule stops a declared forbidden purpose, it cannot prove a declared benign one.

@@ -4,7 +4,8 @@ Hana (HR admin) looks after two personnel files, E-1001 and E-1002. The HR card 
 to judge employees (rank them, rate them, write their performance review, decide who is let go). So:
 - asking the agent to evaluate, rank or fire someone is stopped before any model or Jev sees it (`access.purpose`),
   also when X-Purpose claims something harmless, and also when the injection check and signatures are off;
-- an ordinary HR policy question is answered from the published handbook (get_hr_policy, internal);
+- an ordinary HR policy question is answered from the published handbook (get_hr_policy, internal), a synthetic
+  sample company policy with fictional rules, not real legal or leave requirements;
 - a personnel file (get_employee) is DP30: salary, health and manager notes reach no model and no external check.
   While the current model may not see it, the call is not even made; outside Hana's files the scope stops it.
 """
@@ -39,17 +40,20 @@ EMPLOYEES = {
     },
 }
 
-# The published handbook (internal). Written so it explains the rules without itself reading like a request.
+# The published handbook (internal) of a fictional sample company. Written so it explains the rules without itself
+# reading like a request. The numbers are invented for the demo; they are not real leave or employment-law requirements.
+HANDBOOK_NOTE = ("Synthetic sample company policy for a demo (fictional company). These are made-up example rules, "
+                 "not legal advice and not the requirements of any real employer or jurisdiction.")
 HR_POLICY = {
-    "annual leave": "Annual leave: 26 working days per calendar year (20 in the first ten years of total employment), "
+    "annual leave": "Annual leave (sample rule): the fictional company grants 25 working days per calendar year, "
                     "booked in the HR portal at least two weeks ahead.",
-    "parental leave": "Parental leave: 41 weeks shared between parents, on top of maternity and paternity leave; tell "
-                      "HR at least 21 days before it starts.",
-    "remote work": "Remote work: up to 2 days per week with the line manager's agreement; occasional remote work up "
-                   "to 24 days per year.",
-    "termination": "Ending employment: notice periods follow the Labour Code (2 weeks, 1 month or 3 months by length "
-                   "of service). Decisions are taken by people with HR and Legal; AI tools have no role in them.",
-    "reviews": "Performance reviews: held twice a year in person by the line manager. No automated or AI scoring.",
+    "parental leave": "Parental leave (sample rule): the fictional company offers 20 weeks shared between parents; "
+                      "tell HR at least 3 weeks before it starts.",
+    "remote work": "Remote work (sample rule): up to 2 days per week with the line manager's agreement.",
+    "termination": "Ending employment (sample rule): the fictional company uses a notice period set in each contract. "
+                   "Decisions are taken by people with HR and Legal; AI tools have no role in them.",
+    "reviews": "Performance reviews (sample rule): held twice a year in person by the line manager. No automated or "
+               "AI scoring.",
 }
 
 TOOLS = [
@@ -57,7 +61,7 @@ TOOLS = [
         "name": "get_employee", "description": "Fetch an employee's personnel file (role, contract, salary, health, notes) by employee id.",
         "parameters": {"type": "object", "properties": {"employee_id": {"type": "string"}}, "required": ["employee_id"]}}},
     {"type": "function", "function": {
-        "name": "get_hr_policy", "description": "Look up the published HR policy handbook by topic.",
+        "name": "get_hr_policy", "description": "Look up the published HR policy handbook (a synthetic sample company policy) by topic.",
         "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}}},
 ]
 
@@ -69,5 +73,5 @@ def run_tool(name: str, args: dict) -> str:
     if name == "get_hr_policy":
         topic = str(args.get("topic", "")).lower()
         hits = [text for key, text in HR_POLICY.items() if any(w in topic for w in key.split())]
-        return json.dumps({"policy": hits or list(HR_POLICY.values())})
+        return json.dumps({"note": HANDBOOK_NOTE, "policy": hits or list(HR_POLICY.values())})
     return json.dumps({"error": f"unknown tool {name}"})

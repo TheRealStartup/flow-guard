@@ -44,6 +44,8 @@ Data classes (Sun, issue #13; decisions.md D6): `classification` in policy.yaml 
 tool + restricted terms). Nothing above `max_to_model` / a model's `max_class` reaches a model; Jev (external) gets at most
 `injection.jev.max_class: internal`, so a P2 client file blocks the onboarding flow unless that is raised. Falcon and
 `query_datalake` are DP30, so even marcus's model never sees them. tests/test_classification.py checks what actually left.
+Data lake (D7): `query_datalake` runs named queries from `datalake` in policy.yaml over demo/datalake.py; refused before
+running (unknown / role / class), one neutral reason, labels verified, lower views only via a declared transformation.
 Not yet: dashboard views (only a test-prompt page so far), approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.
 
@@ -55,7 +57,7 @@ screen_sanctions, a poisoned client document (Jev quarantines only that field), 
 runs) and the flow rule (MNPI/PII never leaves). `mock/compromised` (gateway/acl/adapters/mock_model.py) obeys any
 instruction it reads, for every scenario. `--scenario developer` (devon; demo/developer.py): secret in .env redacted, http_post outside blocked, live
 threat-feed update, runaway test loop stopped by the budget. The poisoned README line is written by hand (TODO marker).
-`--scenario hr` (hana, hr_admin; demo/hr.py, synthetic people): `access.purpose` (decisions.md D7) stops X-Purpose
+`--scenario hr` (hana, hr_admin; demo/hr.py, synthetic people): `access.purpose` (decisions.md D8) stops X-Purpose
 performance_review/termination/ranking and prompts asking to rank/rate/evaluate/fire employees, first, before any model
 or Jev, with signatures and Jev off too. `get_employee` is DP30, scoped to `allowed_employees`, and not called while the
 model or Jev may not see it (`classification.block_calls_above_limit`). Policy questions go through `get_hr_policy`.

@@ -36,11 +36,12 @@ def _world(scenario: str):
 
 def _preview(app, tool: str, result: str) -> str:
     """A masked preview, and none at all for a tool whose class is above the default (P2/DP30, or no class): the
-    dashboard must not show what the model may not see."""
+    dashboard must not show what the model may not see. Fails closed: a tool with no class or one that is not a level,
+    or a default that is missing or not a level, withholds the preview (unknown names are never echoed)."""
     p = app.state.engine.policies.get()
-    cls = p.tool_class(tool)
-    if p.rank(cls) > p.rank(p.classification.get("default")):
-        return f"[WITHHELD from preview: {cls or 'unclassified'} result]"
+    cls, default = p.tool_class(tool), p.classification.get("default")
+    if cls not in p.levels or default not in p.levels or p.rank(cls) > p.rank(default):
+        return f"[WITHHELD from preview: {cls if cls in p.levels else 'unclassified'} result]"
     return safe_excerpt(result, width=300)
 
 

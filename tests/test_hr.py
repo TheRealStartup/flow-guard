@@ -1,4 +1,4 @@
-"""HR: no model judges employees (`access.purpose`, docs/decisions.md D7), and personnel files (DP30) reach no model and
+"""HR: no model judges employees (`access.purpose`, docs/decisions.md D8), and personnel files (DP30) reach no model and
 no external check. Scripted compromised model, fake Jev, synthetic people (demo/hr.py). Each test checks what actually
 left the gateway: the bodies the model received, the texts Jev received, the audit log and the Try-it output."""
 
@@ -25,12 +25,31 @@ JUDGING = [
     "Stack-rank my team by productivity.",
     "Oceń pracownika E-1001 w skali 1-5.",
 ]
+# Named people, no employee id or "my team": still judging (deterministic signatures HR-EVAL-NAMED-*).
+NAMED_JUDGING = [
+    "Should we fire Maria?",
+    "should we fire maria?",
+    "SHOULD WE FIRE MARIA?",
+    "Should I fire Maria Kowalska this week?",
+    "Should we really terminate Maria or not?",
+    "Can we let Maria go?",
+    "Rank Alice and Bob by performance",
+    "rank alice and bob by performance.",
+    "RANK ALICE AND BOB BY PERFORMANCE!",
+    "Rank Alice, Bob and Carol by productivity.",
+    "Compare Alice vs Bob: who is better?",
+]
 ALLOWED_HR = [
     "What is the parental leave policy?",
     "How many days of annual leave do employees get?",
     "What is the notice period in the termination policy?",
+    "How does the termination process work in the HR policy?",
     "Rank these cities by cost of living for the relocation policy.",
+    "Rank the employee benefit options by value for new joiners.",
+    "Rank dental and vision plans by price for the benefits page.",
     "Sort the FX rates table by date.",
+    "Should we fire the analytics event when a leave request is approved?",
+    "Should we fire webhooks twice when the HR portal times out?",
 ]
 
 
@@ -152,12 +171,43 @@ def test_ordinary_hr_questions_and_ranking_things_are_allowed(gw, prompt):
     msg, decisions, tools_run = run(gw, prompt)
     assert not any(c == "access.purpose" for c, _ in decisions)
     assert tools_run == ["get_hr_policy"] and "Here is what I received" in msg["content"]
-    assert "Labour Code" in to_model(gw) or "leave" in to_model(gw) or "Remote" in to_model(gw)
+    assert "Synthetic sample company policy" in to_model(gw)
+
+
+def test_handbook_says_it_is_a_synthetic_sample():
+    out = json.loads(hr.run_tool("get_hr_policy", {"topic": "annual leave"}))
+    assert out["note"].startswith("Synthetic sample company policy") and "not legal advice" in out["note"]
+    assert all("sample rule" in text for text in hr.HR_POLICY.values())
 
 
 def test_the_rule_is_scoped_to_hr(gw):
     gw.upstream.next_reply = {"text": "ok"}
     r = gw.chat("alice", [{"role": "user", "content": "Rank the employees in the call centre."}])
+    assert not any(c == "access.purpose" for c, _ in decisions_of(r)) and gw.upstream.seen
+
+
+@pytest.mark.parametrize("prompt", NAMED_JUDGING)
+def test_named_employee_judging_under_a_benign_purpose_is_stopped(gw, prompt):
+    # Deterministic regexes (a floor, not a semantic guarantee): nothing reaches the model or Jev, no tool runs, and
+    # neither the audit log nor the answer repeats the request or the name.
+    msg, decisions, tools_run = run(gw, prompt, purpose="leave questions")
+    assert decisions == [("access.purpose", "block")] and tools_run == []
+    assert not gw.upstream.seen and not gw.judge.calls
+    for t in (prompt, "Maria", "Alice"):
+        assert t not in audit(gw) and t not in msg["content"]
+
+
+@pytest.mark.parametrize("prompt", NAMED_JUDGING[:1] + NAMED_JUDGING[6:7])
+def test_named_judging_on_the_anthropic_path_is_stopped(gw, prompt):
+    r = post_anthropic(gw, [{"role": "user", "content": [{"type": "text", "text": prompt}]}], purpose="onboarding")
+    assert [(d["control"], d["action"]) for d in r.json()["acl"]["decisions"]] == [("access.purpose", "block")]
+    assert not gw.upstream.seen and not gw.judge.calls and prompt not in audit(gw)
+
+
+@pytest.mark.parametrize("prompt", ["Should we fire Maria?", "Rank Alice and Bob by performance"])
+def test_named_rules_do_not_apply_outside_hr(gw, prompt):
+    gw.upstream.next_reply = {"text": "ok"}
+    r = gw.chat("alice", [{"role": "user", "content": prompt}])
     assert not any(c == "access.purpose" for c, _ in decisions_of(r)) and gw.upstream.seen
 
 
@@ -348,6 +398,34 @@ def test_try_it_preview_never_shows_a_personnel_file(gw):
     for t in PROTECTED:
         assert t not in out
     nowhere(gw, *PROTECTED)
+
+
+@pytest.mark.parametrize("change", [
+    lambda c: c.update(default="no-such-level"),                     # invalid default
+    lambda c: c.pop("default"),                                      # missing default
+    lambda c: c.update(levels=[lv for lv in c["levels"] if lv != "internal"]),  # internal level missing
+    lambda c: c["tools"].update(get_employee="no-such-level"),       # invalid tool class
+    lambda c: c["tools"].pop("get_employee"),                        # unclassified tool
+    lambda c: c.update(levels=[]),                                   # no levels at all
+], ids=["invalid-default", "missing-default", "missing-internal", "invalid-tool-class", "unclassified-tool", "no-levels"])
+def test_try_it_preview_fails_closed_on_unknown_classes(gw, change):
+    import copy
+    from types import SimpleNamespace
+
+    from acl.tryit import _preview
+    p = copy.deepcopy(gw.app.state.engine.policies.get())
+    change(p.raw["classification"])
+    app = SimpleNamespace(state=SimpleNamespace(engine=SimpleNamespace(policies=SimpleNamespace(get=lambda: p))))
+    out = _preview(app, "get_employee", hr.run_tool("get_employee", {"employee_id": "E-1001"}))
+    assert out.startswith("[WITHHELD from preview:") and "no-such-level" not in out
+    for t in PROTECTED:
+        assert t not in out
+
+
+def test_try_it_preview_shows_an_internal_result(gw):
+    from acl.tryit import _preview
+    out = _preview(gw.app, "get_hr_policy", hr.run_tool("get_hr_policy", {"topic": "annual leave"}))
+    assert not out.startswith("[WITHHELD") and "sample" in out.lower()
 
 
 def test_try_it_hr_policy_question_goes_through(gw):

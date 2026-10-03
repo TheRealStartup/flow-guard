@@ -182,7 +182,7 @@ class Engine:
             pass
         return f"[WITHHELD: {p.barrier_message}]", [d]
 
-    def _source_class(self, p: Policy, s: Session, msg: dict[str, Any], claimed: dict[str, str]) -> str | None:
+    def _source_class(self, p: Policy, s: Session, msg: dict[str, Any], claimed: dict[str, tuple[str, str]]) -> str | None:
         """Where a message came from sets its class, never what it says about itself. A tool result has the class of
         its tool, preferring the call this gateway let through; a result whose call id we issued for another tool is
         unclassified. History the gateway never saw falls back to the tool name the agent claims (docs/decisions.md D6)."""
@@ -190,9 +190,24 @@ class Engine:
             return p.classification.get("default")
         cid = msg.get("tool_call_id")
         issued, named = s.issued.get(cid), claimed.get(cid)
-        if issued and named and issued != named:
+        if issued and named and issued[0] != named[0]:
             return None
-        return p.tool_class(issued or named)
+        name, args = issued or named or (None, "")
+        if name and name == p.datalake.get("tool"):
+            return self._lake_class(p, msg, args)
+        return p.tool_class(name)
+
+    @staticmethod
+    def _lake_class(p: Policy, msg: dict[str, Any], args: str) -> str | None:
+        """A data-lake result has the class of the named query that was run (its dataset or transformation). The lake
+        labels every result; a missing label, or one that differs from the catalog, leaves it unclassified (withheld)."""
+        try:
+            query = json.loads(args or "{}").get(p.datalake.get("argument", "query"))
+            label = json.loads("\n".join(get() for get, _ in _text_parts(msg))).get("class")
+        except (ValueError, AttributeError):
+            return None
+        expected = p.query_class(query)
+        return expected if expected is not None and label == expected else None
 
     @staticmethod
     def _term_rank(p: Policy, text: str) -> int:
@@ -274,7 +289,7 @@ class Engine:
         return n
 
     def _purpose(self, p: Policy, s: Session, msgs: list[dict[str, Any]], model: str) -> Decision | None:
-        """`access.purpose` (docs/decisions.md D7): runs first, before the model, Jev or any other check sees anything.
+        """`access.purpose` (docs/decisions.md D8): runs first, before the model, Jev or any other check sees anything.
         A forbidden stated purpose stops the request; so does any message of the conversation, history included, that
         matches one of the rule's signatures, whatever the header claims. Tool results are searched only if their
         source class lets them reach this model (others are withheld anyway, so they cannot carry a request to it, and
@@ -294,7 +309,7 @@ class Engine:
         for rule in rules:
             if hit := rule.forbidden_purpose(s.purpose):
                 return decide(rule, f"purpose {hit!r} is forbidden", "request")
-        claimed = {tc.get("id"): tc.get("function", {}).get("name", "")
+        claimed = {tc.get("id"): (tc.get("function", {}).get("name", ""), tc.get("function", {}).get("arguments", "") or "")
                    for m in msgs if m.get("role") == "assistant" for tc in m.get("tool_calls") or []}
         limit = p.model_limit(model)
         for msg in msgs:
@@ -359,7 +374,7 @@ class Engine:
             ex.decisions += ds
 
         msgs = body.get("messages", [])
-        claimed = {tc.get("id"): tc.get("function", {}).get("name", "")
+        claimed = {tc.get("id"): (tc.get("function", {}).get("name", ""), tc.get("function", {}).get("arguments", "") or "")
                    for m in msgs if m.get("role") == "assistant" for tc in m.get("tool_calls") or []}
         limit = p.model_limit(model)
         to_judge: list[tuple[dict[str, Any], str, str, int]] = []  # (message, hash, where, class rank)
@@ -515,6 +530,18 @@ class Engine:
                 if gate := p.call_gate(name, ex.model):
                     ds.append(Decision("classification", "block", where, f"{name} returns {gate[0]} data, above the {gate[1]} "
                                        f"limit for model {ex.model} and its checks; the call never runs"))
+                if name == p.datalake.get("tool") and p.action("access.datalake") != "allow":
+                    # Named queries only, and only those the role may run whose result could be sent on (to the model,
+                    # and to Jev when it is on). Refused before the query runs, with one neutral reason for every case,
+                    # so a refusal says nothing about which datasets exist or what they hold.
+                    try:
+                        query = json.loads(args or "{}").get(p.datalake.get("argument", "query"))
+                    except (ValueError, AttributeError):
+                        query = None
+                    reach = min(p.model_limit(ex.model), p.judge_limit() if p.action("injection.jev") != "allow" else p.max_to_model)
+                    if not p.may_query(s.user, query) or p.rank(p.query_class(query)) > reach:
+                        ds.append(Decision("access.datalake", p.action("access.datalake"), where,
+                                           "this query is not available; it never ran"))
                 outside = p.egress(name, args)  # e.g. Claude Code's `Bash: curl … https://outside`
                 if (name in p.sinks("external") or outside is not None) and p.action("flow.sensitive_to_external") != "allow":
                     via = f"{name} ({', '.join(outside) or 'unknown host'})" if outside is not None else name
@@ -539,7 +566,7 @@ class Engine:
                     continue
                 s.tool_calls += 1
                 if tc.get("id"):
-                    s.issued[tc["id"]] = name  # the result that comes back takes this tool's class, whatever the agent claims
+                    s.issued[tc["id"]] = (name, args)  # the result that comes back takes this tool's class, whatever the agent claims
                 if name in p.sinks("detokenize") and TOKEN_RE.search(args):
                     fn["arguments"] = s.detokenize(args)
                     call["outcome"] = "allowed_with_real_values"

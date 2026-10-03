@@ -32,7 +32,7 @@ class Session:
     seen: set[str] = field(default_factory=set)  # hashes of messages already checked and logged
     quarantined: dict[str, str] = field(default_factory=dict)  # message hash -> replacement text
     judged: set[str] = field(default_factory=set)  # hashes of messages the injection check has passed
-    issued: dict[str, str] = field(default_factory=dict)  # tool-call id -> tool name, for calls this gateway let through
+    issued: dict[str, tuple[str, str]] = field(default_factory=dict)  # tool-call id -> (tool, arguments) this gateway let through
     spotlight_id: str = field(default_factory=lambda: secrets.token_hex(4))  # in the tool-data markers; unguessable
     tokens: int = 0
     cost_usd: float = 0.0
