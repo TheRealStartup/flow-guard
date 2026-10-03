@@ -57,3 +57,9 @@ threat-feed update, runaway test loop stopped by the budget. The poisoned README
 SSE replay of the checked answer. `just claude-code` starts the real `claude` in a throwaway copy of the developer repo
 (devon's second key, agent `claude-code`, own config dir in gateway/data/claude-code/). Policy `egress`: `Bash` curl/wget/…
 to a host outside `allow_hosts` counts as an external sink. Spec + demo beats: docs/claude-code.md. Hooks route not built.
+
+## Status (Sun 4 Oct ~01:30)
+Core demo: docs/demo-script.md (A onboarding via the dashboard's Live demo; B the real Claude Code via `just claude-code`).
+Decisions D4 (two core scenarios) and D5 (airtight = business-correct first) in docs/decisions.md. Tasks and priorities
+live on the board (github.com/orgs/TheRealStartup/projects/1); docs/backlog.md holds parked ideas only.
+Known open: onboarding documents not verified against a KYC checklist; client names reach the model.
