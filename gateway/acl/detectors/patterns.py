@@ -47,7 +47,12 @@ SECRET_RES = [
     re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_-]{20,}"),  # OpenAI / Anthropic / OpenRouter
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36}\b"),  # GitHub tokens
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(r"\b[rsp]k_(?:live|test)_[A-Za-z0-9]{16,}"),  # Stripe
 ]
+URL_CREDS_RE = re.compile(r"[a-z][\w+.-]*://[^/\s:@]+:([^@\s/]{3,})@", re.IGNORECASE)  # scheme://user:PASSWORD@host
+# The value of a secret-looking assignment in config files (.env, YAML, JSON): DB_PASSWORD=..., "api_key": "..."
+SECRET_ASSIGN_RE = re.compile(
+    r"""(?i)\b[\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|access[_-]?key)[\w.-]*["']?\s*[:=]\s*["']?([^\s"',;]{4,})""")
 
 
 def find_sensitive(text: str) -> list[Span]:
@@ -68,6 +73,11 @@ def find_sensitive(text: str) -> list[Span]:
     for rx in SECRET_RES:
         for m in rx.finditer(text):
             spans.append(Span(m.start(), m.end(), "SECRET", m.group(), "secrets"))
+    for m in URL_CREDS_RE.finditer(text):
+        spans.append(Span(m.start(1), m.end(1), "SECRET", m.group(1), "secrets"))
+    for m in SECRET_ASSIGN_RE.finditer(text):
+        if not m.group(1).startswith("[["):  # already a token
+            spans.append(Span(m.start(1), m.end(1), "SECRET", m.group(1), "secrets"))
     # Drop spans that overlap an earlier, longer one (e.g. digits of an IBAN read as a PESEL).
     spans.sort(key=lambda s: (s.start, -(s.end - s.start)))
     out: list[Span] = []

@@ -14,6 +14,9 @@ import yaml
 
 ACTIONS = ("allow", "flag", "redact", "block")
 SPOTLIGHT_MODES = ("delimit", "off")
+# Hosts in a shell command: URLs (scheme://host), user@host: (scp/rsync), and bare host names / IPs.
+HOST_RE = re.compile(r"(?:[a-z][\w+.-]*://|@)?((?:[\w-]+\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})(?=[:/\s'\"]|$)",
+                     re.IGNORECASE)
 
 
 @dataclass
@@ -105,6 +108,24 @@ class Policy:
     def sinks(self, kind: str) -> list[str]:
         return self.raw.get("sinks", {}).get(kind, [])
 
+    def egress(self, tool: str, args: str) -> list[str] | None:
+        """Outside hosts a shell-command tool call would send data to (e.g. Claude Code's `Bash: curl ...`), or None
+        if the call is not an outbound command. An outbound command with no recognisable host counts as outside."""
+        cfg = self.raw.get("egress") or {}
+        field = (cfg.get("tools") or {}).get(tool)
+        if not field:
+            return None
+        try:
+            cmd = str(json.loads(args or "{}").get(field) or "")
+        except (ValueError, AttributeError):
+            cmd = args
+        if not any(re.search(pat, cmd) for pat in cfg.get("patterns", [])):
+            return None
+        allowed = {h.lower() for h in cfg.get("allow_hosts", [])}
+        hosts = {h.lower() for h in HOST_RE.findall(cmd)}
+        outside = sorted(h for h in hosts if h not in allowed)
+        return outside if outside or not hosts else None
+
 
 def _merge(base: dict[str, dict], overrides: dict[str, dict]) -> dict[str, dict]:
     out = copy.deepcopy(base)
@@ -125,6 +146,9 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
             raise ValueError(f"control {cid}: action must be one of {ACTIONS}")
     if controls.get("spotlight", {}).get("mode", "delimit") not in SPOTLIGHT_MODES:
         raise ValueError(f"control spotlight: mode must be one of {SPOTLIGHT_MODES}")
+
+    for pat in (raw.get("egress") or {}).get("patterns", []):
+        re.compile(pat)  # a broken pattern is rejected here, so the last good policy stays active
 
     sigs: list[Signature] = []
     if sig_text is not None:
@@ -155,7 +179,7 @@ def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
         for k in sorted(set(a) | set(b)):
             if a.get(k) != b.get(k):
                 out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
-    for key in ("budgets", "models", "users", "roles", "sinks", "identity"):
+    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "identity"):
         if old.raw.get(key) != new.raw.get(key):
             out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
     if [x.id for x in old.signatures] != [x.id for x in new.signatures]:

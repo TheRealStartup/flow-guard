@@ -38,7 +38,7 @@ Working: model proxy (`/v1/chat/completions`), policy live reload + profiles, ca
 redaction as reversible tokens, Jev injection/jailbreak check (fail closed on error), role → tools,
 data-flow block to external sinks, spotlighting (tool results sent inside per-session `<<tool_data id=…>>` markers + a
 system note; fake markers escaped and flagged; `spotlight` control; tests/test_spotlight.py), budgets (tokens/$/compute/tool calls), signature feed, hash-chained
-audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 102 tests, ~7 s, no network or keys; GitHub Actions runs it on every push/PR (`.github/workflows/test.yml`). Dashboard API: docs/api.md (+ /docs on the gateway).
+audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 118 tests, ~9 s, no network or keys; GitHub Actions runs it on every push/PR (`.github/workflows/test.yml`). Dashboard API: docs/api.md (+ /docs on the gateway).
 `mock/compromised` is a scripted model that obeys injections, for the demo and the tests.
 Not yet: dashboard views (only a test-prompt page so far), approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.
@@ -51,3 +51,9 @@ screen_sanctions, a poisoned client document (Jev quarantines only that field), 
 runs) and the flow rule (MNPI/PII never leaves). `mock/compromised` (gateway/acl/adapters/mock_model.py) obeys any
 instruction it reads, for every scenario. `--scenario developer` (devon; demo/developer.py): secret in .env redacted, http_post outside blocked, live
 threat-feed update, runaway test loop stopped by the budget. The poisoned README line is written by hand (TODO marker).
+
+## Claude Code behind the gateway (Sat ~22:30)
+`/v1/messages` adapter (gateway/acl/adapters/anthropic.py): Anthropic ↔ OpenAI translation around the unchanged engine,
+SSE replay of the checked answer. `just claude-code` starts the real `claude` in a throwaway copy of the developer repo
+(devon's second key, agent `claude-code`, own config dir in gateway/data/claude-code/). Policy `egress`: `Bash` curl/wget/…
+to a host outside `allow_hosts` counts as an external sink. Spec + demo beats: docs/claude-code.md. Hooks route not built.

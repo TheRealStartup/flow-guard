@@ -53,6 +53,13 @@ fmt:
 agent user prompt model="deepseek/deepseek-v4.1-flash":
     cd gateway && uv run python ../demo/agent.py {{user}} "{{prompt}}" --model {{model}}
 
+# Claude Code itself behind the gateway (needs `just gateway`), in a throwaway copy of the developer repo.
+# Extra args go to claude: just claude-code mock/compromised -p "What's configured in .env?"
+# Another folder: ACL_REPO=~/some/repo just claude-code deepseek/deepseek-v4.1-flash
+[positional-arguments]
+claude-code model="mock/compromised" *args:
+    cd gateway && ACL_CALLER_DIR="{{invocation_directory()}}" uv run python ../demo/claude_code.py --model "$1" -- "${@:2}"
+
 # new API key for a user's agent: prints the key (give it to the agent) and the line for policy/identities.yaml
 new-key user agent:
     @python3 -c "import secrets,hashlib; k='acl_'+'{{user}}'+'_'+secrets.token_hex(16); print('key (give to the agent, store nowhere else):', k); print('add to policy/identities.yaml:'); print('  - {user: {{user}}, agent: {{agent}}, key_sha256: '+hashlib.sha256(k.encode()).hexdigest()+'}')"

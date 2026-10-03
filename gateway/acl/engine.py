@@ -391,7 +391,9 @@ class Engine:
                     if val not in allowed:
                         ds.append(Decision("access.scope", p.action("access.scope"), where,
                                            f"{scope['argument']}={val!r} is not in {s.user}'s {scope['user_field']}; the call never runs"))
-                if name in p.sinks("external") and p.action("flow.sensitive_to_external") != "allow":
+                outside = p.egress(name, args)  # e.g. Claude Code's `Bash: curl … https://outside`
+                if (name in p.sinks("external") or outside is not None) and p.action("flow.sensitive_to_external") != "allow":
+                    via = f"{name} ({', '.join(outside) or 'unknown host'})" if outside is not None else name
                     mode = p.control("flow.sensitive_to_external").get("mode", "value")
                     carried = {m.group(1) for m in TOKEN_RE.finditer(args)} | {sp.kind for sp in find_sensitive(args)}
                     if p.restricted_hits(args):
@@ -399,7 +401,7 @@ class Engine:
                     if carried or (mode == "session" and s.labels):
                         what = sorted(carried) if carried else sorted(s.labels)
                         ds.append(Decision("flow.sensitive_to_external", p.action("flow.sensitive_to_external"), where,
-                                           f"{'/'.join(what)} data would leave the organisation via {name} (mode={mode})"))
+                                           f"{'/'.join(what)} data would leave the organisation via {via} (mode={mode})"))
                 budget = p.budget_for(s.user).get("max_tool_calls")
                 if budget is not None and s.tool_calls + 1 > budget and p.action("budget") != "allow":
                     ds.append(Decision("budget", p.action("budget"), where, f"tool-call budget {budget} exhausted"))

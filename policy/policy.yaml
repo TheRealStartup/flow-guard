@@ -85,7 +85,9 @@ roles:
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
   onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, send_email]}
   mna_banker:         {tools: [search_documents, send_email]}
-  developer:          {tools: [list_files, read_file, run_tests, http_post]}
+  developer:                                   # devon's scripted agent and Claude Code (the capitalised names)
+    tools: [list_files, read_file, run_tests, http_post, Read, Glob, Grep, Edit, Write, Bash, WebFetch, TodoWrite]
+    budget: {max_tokens: 2000000, max_compute_seconds: 1800}   # Claude Code sends ~16k tokens per request
   default:            {tools: []}
 
 # Information barriers (US-1.3). Content naming a restricted deal is withheld from anyone not on that deal,
@@ -100,5 +102,12 @@ scopes:
   get_client_file: {argument: client_id, user_field: assigned_clients}
 
 sinks:
-  external: [send_email, http_post]                # data leaves the organisation here
+  external: [send_email, http_post, WebFetch]      # data leaves the organisation here
   detokenize: [charge_card, screen_sanctions]      # real values are put back only for these tools
+
+# Shell commands that send data out (Claude Code has no http_post: it runs curl in Bash). A matching command to a
+# host outside allow_hosts counts as an external sink, so flow.sensitive_to_external decides on it.
+egress:
+  tools: {Bash: command}                           # tool -> the argument that holds the shell command
+  patterns: ['\b(curl|wget|nc|ncat|scp|rsync|ftp)\b']
+  allow_hosts: [localhost, 127.0.0.1, pypi.org, files.pythonhosted.org]
