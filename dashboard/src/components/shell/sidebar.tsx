@@ -9,7 +9,7 @@ import { usePoll, type Health } from "@/lib/api";
 type Item = { href: string; label: string; icon: LucideIcon; soon?: boolean };
 
 const OVERSIGHT: Item[] = [
-  { href: "/overview", label: "Overview", icon: LayoutGrid, soon: true },
+  { href: "/overview", label: "Overview", icon: LayoutGrid },
   { href: "/audit", label: "Audit trail", icon: ListFilter },
   { href: "/demo", label: "Live demo", icon: FlaskConical },
   { href: "/policies", label: "Policies", icon: SlidersVertical, soon: true },

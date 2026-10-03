@@ -54,7 +54,7 @@ export function AuditTrail() {
   const [agent, setAgent] = useState("");
   const [user, setUser] = useState("");
   const [outcome, setOutcome] = useState("");
-  const [query, setQuery] = useState(params.get("session") ?? "");
+  const [query, setQuery] = useState(params.get("q") ?? params.get("session") ?? "");
   const [pageSize, setPageSize] = useState(12);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);

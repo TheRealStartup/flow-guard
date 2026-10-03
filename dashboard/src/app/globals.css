@@ -44,6 +44,8 @@
   --color-redact-soft: var(--redact-soft);
   --color-flag: var(--flag);
   --color-flag-soft: var(--flag-soft);
+  --color-flag-mark: var(--flag-mark);
+  --color-grid: var(--grid);
   --color-allow: var(--allow);
   --color-allow-soft: var(--allow-soft);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -92,6 +94,8 @@
   --redact-soft: #e9effa;
   --flag: #a36400;
   --flag-soft: #fdf3df;
+  --flag-mark: #c98a00; /* chart fill: --flag is too close to --block for deuteranopes (validated) */
+  --grid: #e8ecf1;
   --allow: #1f7a4d;
   --allow-soft: #e6f4ec;
 }
