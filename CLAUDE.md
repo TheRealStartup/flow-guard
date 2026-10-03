@@ -27,3 +27,12 @@ Session identity across adapters: `X-Session` / `X-User` headers. Decide nothing
 
 ## Run
 `direnv allow` (or `nix develop`), `just install`, `just ollama` + `just models` once, `just dev`, `just test`.
+
+## Status (Sat 3 Oct ~16:30)
+Working: model proxy (`/v1/chat/completions`), policy live reload + profiles, card/IBAN/PESEL/secret
+redaction as reversible tokens, Jev injection/jailbreak check (fail closed on error), role → tools,
+data-flow block to external sinks, budgets (tokens/$/compute/tool calls), signature feed, hash-chained
+audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 44 tests, ~2 s, no network.
+`mock/compromised` is a scripted model that obeys injections, for the demo and the tests.
+Not yet: dashboard page, architecture diagram, approvals, MCP gateway, streaming.
+Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.

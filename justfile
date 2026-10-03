@@ -30,9 +30,13 @@ install:
     cd gateway && uv sync
     cd dashboard && npm install
 
-# the self-testing suite (positive + negative cases)
+# the self-testing suite (positive + negative cases); no network, no keys needed
 test:
     cd gateway && uv run pytest -q
+
+# also run the tests that call the real Jev API (needs TYPESAFE_API_KEY in gateway/.env)
+test-live:
+    cd gateway && set -a && . ./.env && set +a && ACL_LIVE=1 uv run pytest -q
 
 health:
     curl -s localhost:8000/api/health; echo
@@ -46,5 +50,5 @@ fmt:
     cd gateway && ruff format . && ruff check --fix .
 
 # run the demo agent through the gateway: just agent alice "Look up customer 42"
-agent user prompt:
-    cd gateway && uv run python ../demo/agent.py {{user}} "{{prompt}}"
+agent user prompt model="deepseek/deepseek-v4.1-flash":
+    cd gateway && uv run python ../demo/agent.py {{user}} "{{prompt}}" --model {{model}}
