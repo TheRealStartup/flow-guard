@@ -9,7 +9,7 @@ card number, IBAN, PESEL or secret: excerpts are masked (`[CARD]`) or tokenized 
 | `GET /api/health` | header badge | `policy_version`, `profile`, `policy_error` (a judge's broken edit → show a warning, last good policy stays active) |
 | `GET /api/metrics` | Overview | `requests`, `by_outcome` {allowed, flagged, redacted, blocked}, `by_control` {control: {action: n}}, `latency_ms` (p50/p95, `per_control_avg`), `cost_usd`, `sessions`, `budget` |
 | `GET /api/metrics/timeseries?minutes=30` | Overview charts | one bucket per minute: `requests`, outcome counts, `blocks_by_control`, `cost_usd` |
-| `GET /api/events?limit=100&outcome=blocked&type=exchange` | Live feed | newest first. `type` is `exchange` (agent traffic) or `policy_change`. Each decision has `control`, `action`, `where`, `reason`, `ms`, `score`, **`excerpt`** (masked context) |
+| `GET /api/events?limit=100&outcome=blocked&type=exchange` | Live feed | newest first. `type` is `exchange` (agent traffic) or `policy_change`. Each decision has `control`, `action`, `where`, `reason`, `ms`, `score`, **`excerpt`** (masked context). Each entry also has **`tool_calls`** [{name, arguments (masked), outcome: allowed / blocked / allowed_with_real_values, control}] (the "Action / Resource" column) and **`model` / `model_served` / `provider`** |
 | `GET /api/sessions` | Session list | per session: `user`, `agent`, `steps`, `blocked`, `labels` (data the session holds: CARD, IBAN, …) |
 | `GET /api/sessions/{id}` | Session / data flow | `user`, `agent`, `purpose`, `role`, `usage` (tokens, cost, tool calls, labels), `tokens_issued`, `steps` (the audit entries in order) |
 | `GET /api/policy` | Policy | active controls after the profile is applied, `signatures`, **`last_change`** |

@@ -360,3 +360,33 @@ def test_try_it_runs_the_demo_through_every_control(gw, tmp_path, monkeypatch):
 
 def test_try_it_rejects_unknown_users(gw):
     assert gw.client.post("/api/try", json={"user": "mallory", "prompt": "hi"}).status_code == 400
+
+
+# ---------- audit: every action and the model that served it ----------
+
+def test_audit_records_allowed_and_blocked_tool_calls(gw):
+    gw.upstream.next_reply = {"tool_call": {"name": "get_customer", "arguments": {"customer_id": 42}}}
+    gw.chat("alice", user("look up 42"))
+    gw.upstream.next_reply = {"tool_call": {"name": "charge_card", "arguments": {"card_number": "x", "amount_pln": 1}}}
+    gw.chat("alice", user("charge"))
+    blocked, allowed = gw.client.get("/api/events?type=exchange").json()[:2]
+    assert allowed["tool_calls"] == [{"name": "get_customer", "arguments": '{"customer_id": 42}', "outcome": "allowed", "control": None}]
+    assert blocked["tool_calls"][0]["outcome"] == "blocked" and blocked["tool_calls"][0]["control"] == "access.tools"
+
+
+def test_audit_tool_call_with_real_values_stays_masked(gw):
+    msgs = user("refund") + CARD_RESULT
+    gw.upstream.next_reply = {"tool_call": {"name": "charge_card", "arguments": {"card_number": "TOKEN", "amount_pln": -129}}}
+    token = gw.app.state.engine.session("s1", "bob").tokenize("CARD", "4111111111111111")
+    gw.upstream.next_reply["tool_call"]["arguments"]["card_number"] = token
+    r = gw.chat("bob", msgs).json()
+    assert "4111111111111111" in r["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]  # the tool gets it
+    call = gw.client.get("/api/events?type=exchange").json()[0]["tool_calls"][0]
+    assert call["outcome"] == "allowed_with_real_values" and "4111111111111111" not in json.dumps(call)  # the log does not
+
+
+def test_audit_records_which_model_answered(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    gw.chat("alice", user("hi"))
+    e = gw.client.get("/api/events?type=exchange").json()[0]
+    assert e["model"] == "mock/compromised" and e["model_served"] == "mock/compromised"

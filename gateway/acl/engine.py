@@ -12,7 +12,7 @@ import hashlib
 import json
 import statistics
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .detectors.jev import Judge
@@ -45,6 +45,9 @@ class Exchange:
     decisions: list[Decision]
     blocked: Decision | None = None
     controls_ms: float = 0.0
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)  # every action the model proposed, and what happened to it
+    model_served: str | None = None  # what the provider says actually answered (FINRA: track model versions)
+    provider: str | None = None
 
 
 def _text_parts(msg: dict[str, Any]):
@@ -248,6 +251,8 @@ class Engine:
         p, s = ex.policy, ex.session
         resp = copy.deepcopy(resp)
 
+        ex.model_served = resp.get("model")
+        ex.provider = resp.get("provider")
         usage = resp.get("usage") or {}
         s.tokens += int(usage.get("total_tokens") or 0)
         mcfg = p.models.get(ex.model, {})
@@ -282,12 +287,16 @@ class Engine:
                     ds.append(Decision("budget", p.action("budget"), where, f"tool-call budget {budget} exhausted"))
                 ex.decisions += _with_excerpt(ds, f"{name}({args})")
                 block = next((d for d in ds if d.action == "block"), None)
+                call = {"name": name, "arguments": safe_excerpt(args, width=300), "outcome": "allowed", "control": None}
+                ex.tool_calls.append(call)
                 if block:
+                    call.update(outcome="blocked", control=block.control, reason=block.reason)
                     notes.append(f"⛔ AI Control Layer blocked `{name}`: {block.reason} [{block.control}]")
                     continue
                 s.tool_calls += 1
                 if name in p.sinks("detokenize") and TOKEN_RE.search(args):
                     fn["arguments"] = s.detokenize(args)
+                    call["outcome"] = "allowed_with_real_values"
                     ex.decisions.append(Decision("pii.detokenize", "flag", where, "real values restored for an allowed tool",
                                                  excerpt=safe_excerpt(f"{name}({args})")))
                 kept.append(tc)
@@ -320,10 +329,13 @@ class Engine:
             "purpose": ex.session.purpose,
             "role": ex.policy.role_of(ex.session.user),
             "model": ex.model,
+            "model_served": ex.model_served,
+            "provider": ex.provider,
             "profile": ex.policy.profile,
             "policy_version": ex.policy.version,
             "outcome": outcome,
             "decisions": [asdict(d) for d in ex.decisions],
+            "tool_calls": ex.tool_calls,
             "controls_ms": round(ex.controls_ms, 2),
             "upstream_ms": round(upstream_ms, 1) if upstream_ms is not None else None,
             "usage": ex.session.usage(),
