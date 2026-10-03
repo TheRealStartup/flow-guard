@@ -132,7 +132,7 @@ sinks:
   `sinks.detokenize` for local paths only.
 
 ### The demo (what Paul runs)
-`just claude-code` creates a throwaway copy of the developer scenario's fake repo (`fx-rates-service`, built from
+`just claude-code` creates a throwaway copy of the developer scenario's fake repo (`payments-service` in `/tmp/flowguard-demo/`, recreated each run, built from
 `demo/developer.py`'s `REPO` at runtime, so nobody hand-copies the quarantined README), then starts:
 ```bash
 ANTHROPIC_BASE_URL=http://localhost:8000 ANTHROPIC_AUTH_TOKEN=$DEVON_CC_KEY ANTHROPIC_MODEL=mock/compromised ANTHROPIC_SMALL_FAST_MODEL=mock/compromised claude

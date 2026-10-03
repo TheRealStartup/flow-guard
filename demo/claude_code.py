@@ -17,7 +17,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import developer
@@ -34,7 +33,12 @@ def key() -> str:
 
 
 def make_repo() -> Path:
-    repo = Path(tempfile.mkdtemp(prefix="fx-rates-service-"))
+    # Always the same folder, recreated fresh: Claude Code asks "do you trust this folder?" once per path, and its
+    # config lives in gateway/data/claude-code, so the question comes once, not on every demo run.
+    # A fixed path (not tempfile.gettempdir(): inside `nix develop` that is a new random folder per shell).
+    repo = Path(os.environ.get("ACL_DEMO_DIR", "/tmp/flowguard-demo")) / "payments-service"
+    shutil.rmtree(repo, ignore_errors=True)
+    repo.mkdir(parents=True)
     for name, content in developer.REPO.items():
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(content)
