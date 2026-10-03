@@ -24,6 +24,19 @@ Details for each step are in the README ("Run with Docker Compose").
    because it accepts calls from inside the gateway's container only. Design that view against the Docker dashboard
    on :3000, or use the data from step 5.
 
+## Linux
+- Docker Engine + Compose plugin (skip if `docker compose version` works): Ubuntu/Debian
+  `sudo apt install docker.io docker-compose-v2` (24.04+, else docs.docker.com/engine/install), Fedora
+  `sudo dnf install moby-engine docker-compose`, Arch `sudo pacman -S docker docker-compose`; then
+  `sudo systemctl enable --now docker`.
+- Without sudo: `sudo usermod -aG docker $USER`, then log out and in (or `newgrp docker`), else "permission denied".
+- Clone: `git clone git@github.com:TheRealStartup/flow-guard.git && cd flow-guard` (or the https URL).
+- Keys: `cp .env.example .env && nano .env` (two keys + `ACL_JUDGE=jev`).
+- Start + data: `docker compose up --build -d --wait && docker compose exec gateway python /app/demo/seed.py`.
+- Hot reload (Node.js 22, gateway stays in Docker):
+  `cd dashboard && npm install && BACKEND_URL=http://127.0.0.1:8000 npm run dev -- -p 3001`.
+- Without Docker (backend work): README "Development without Docker".
+
 ## Windows (PowerShell, not CMD)
 - Install WSL 2 + Docker Desktop (README has the commands), then **restart Windows once**. After any install, open a
   **new** PowerShell window; old windows don't see new commands. Docker Desktop must show "Engine running".
