@@ -1,5 +1,17 @@
 # Demo panel: show what the gateway actually does
 
+## SIMPLE VERSION (preferred, Paul Sat ~20:00)
+One result card per run, three parts:
+1. **Verdict line:** "3 values hidden from the model · 1 action stopped · nothing left the organisation".
+   Counts come from `acl.decisions` (redact → hidden; block on a `tool_call:*` → stopped).
+2. **"What the model saw" box:** the conversation as the model received it, with every replacement highlighted
+   (`[[CARD#3f2a1b ****4444]]` in amber, a quarantined note in red). Hovering a highlight shows the rule and reason.
+   Source: the `excerpt` of each decision.
+3. **Stopped actions** (only if any): one red row per blocked call, e.g. "`send_email` → pci-review@… · stopped
+   before it ran · card data would leave the organisation".
+
+The three-checkpoint explanation below goes on a **pitch slide**, not into the UI.
+
 For Inez, from Paul + the code session (Sat ~19:50). It replaces the "denied before database retrieval" wording, which
 we don't do. Below are the three checkpoints the gateway really has, the wording for each, and the API field that feeds it.
 
