@@ -21,3 +21,23 @@ We go with it for now, to get one path working end to end. Paul is not convinced
 
 ## D2 · No approvals in the MVP
 A policy action `require_approval` blocks with a reason for now. Approval by a second person, bound to a hash of the arguments, is extension #1.
+
+## D3 · Latency target: 300 ms p95 applies to the rule-based path only · PROPOSED, open
+US-1.1 asks for overhead under 300 ms at p95. The Jev check can't meet that.
+
+**Measured (venue wifi):**
+- 14:45: 2.0–4.5 s per Jev call.
+- 15:40 (curl breakdown): 0.59–0.77 s on a new connection.
+  - DNS 0.26–0.41 s (slow venue DNS)
+  - TCP + TLS about 0.3 s
+  - server work about 0.3–0.4 s
+- The 14:45 numbers were not reproduced; probably a load spike.
+- With the reused connection (in the code since 15:00), expect 0.3–0.45 s per call.
+
+**Proposal:**
+- The 300 ms target applies to the rule-based path (single-digit ms).
+- AI-check latency is reported separately (`/api/metrics` → `per_control_avg`).
+- The AI check runs only on new untrusted content, cached.
+- If we must meet 300 ms end to end, add a local classifier first (backlog).
+
+**Decide with:** the team, after the mentor conversation.
