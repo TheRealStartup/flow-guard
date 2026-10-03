@@ -1,5 +1,7 @@
 ﻿# AI Control Layer
 
+[![test](https://github.com/TheRealStartup/flow-guard/actions/workflows/test.yml/badge.svg)](https://github.com/TheRealStartup/flow-guard/actions/workflows/test.yml)
+
 HackYeah 2026 · Goldman Sachs partner task. A policy gateway between AI agents and
 models and tools: policy checks, reversible redaction, budgets and an audit log.
 
@@ -118,5 +120,6 @@ the TypeSafe key; keep `ACL_JUDGE=demo` only for demonstrations.
 With Python 3.12+, uv and Node 22+, run `uv sync` inside `gateway` and `npm ci`
 inside `dashboard`. Start `uv run uvicorn main:app --host 0.0.0.0 --port 8000`
 and `npm run dev` in their respective directories. For an offline run, set
-`ACL_JUDGE=demo` in the gateway environment. Run `uv run pytest -q` in `gateway`.
+`ACL_JUDGE=demo` in the gateway environment. Run `uv run pytest -q` in `gateway`
+(the same suite as `just test`; GitHub Actions runs it on every push and PR, no keys needed).
 The Nix/direnv workflow and `just` commands remain available.

@@ -1,0 +1,22 @@
+# The self-testing suite on every push and PR: `just test`, no network, no keys.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13" # same as the devshell (flake.nix)
+          enable-cache: true
+          cache-dependency-glob: gateway/uv.lock
+      - uses: extractions/setup-just@v3
+      - run: just test
