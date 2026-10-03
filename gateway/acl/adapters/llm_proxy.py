@@ -1,7 +1,7 @@
 """Model proxy adapter: an OpenAI-compatible /v1/chat/completions endpoint.
 
-Agents point `base_url` here. Who the agent acts for comes from the `X-User` header, and
-the conversation from `X-Session`. See docs/decisions.md (D1) for why this is the first
+Agents point `base_url` here. A bearer key identifies the user and agent; X-Purpose
+states the reason and X-Session identifies the conversation. See docs/decisions.md (D1) for why this is the first
 adapter and what it cannot see.
 """
 

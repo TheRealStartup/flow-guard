@@ -108,6 +108,54 @@ class Policy:
     def sinks(self, kind: str) -> list[str]:
         return self.raw.get("sinks", {}).get(kind, [])
 
+    # ---------- data classes (P2/DP30, issue #13) ----------
+    # A rank is a position in `classification.levels`, lowest first. Content with no trusted class ranks above every
+    # level; a destination with no limit has limit -1. Both fail closed: missing labels or limits never let data through.
+
+    @property
+    def classification(self) -> dict[str, Any]:
+        return self.raw.get("classification") or {}
+
+    @property
+    def levels(self) -> list[str]:
+        return list(self.classification.get("levels") or [])
+
+    def rank(self, cls: str | None) -> int:
+        lv = self.levels
+        return lv.index(cls) if cls in lv else len(lv)
+
+    def level(self, rank: int) -> str:
+        lv = self.levels
+        return lv[rank] if 0 <= rank < len(lv) else "unclassified"
+
+    def _limit(self, cls: str | None) -> int:
+        return self.levels.index(cls) if cls in self.levels else -1
+
+    def tool_class(self, tool: str | None) -> str | None:
+        """Class of a tool's results, from the policy only (never from the content or the model)."""
+        return (self.classification.get("tools") or {}).get(tool) if tool else None
+
+    def term_rank(self, text: str) -> int:
+        """Highest class among restricted terms named in `text` (a barrier entry without `class` ranks at the top)."""
+        low, top = text.lower(), -1
+        for r in self.raw.get("barriers", {}).get("restricted", []):
+            if any(t.lower() in low for t in r.get("terms", [])):
+                top = max(top, self.rank(r["class"]) if "class" in r else len(self.levels) - 1)
+        return top
+
+    @property
+    def max_to_model(self) -> int:
+        """The global limit: no model destination, task model or judge, may receive more."""
+        return self._limit(self.classification.get("max_to_model"))
+
+    def model_limit(self, model: str) -> int:
+        own = (self.models.get(model) or {}).get("max_class")
+        return min(self.max_to_model, self._limit(own)) if own is not None else self.max_to_model
+
+    def judge_limit(self, cid: str = "injection.jev") -> int:
+        """What an external judge may receive: its own `max_class`, never above `max_to_model`. No max_class: nothing."""
+        return min(self.max_to_model, self._limit(self.control(cid).get("max_class")))
+
     def egress(self, tool: str, args: str) -> list[str] | None:
         """Outside hosts a shell-command tool call would send data to (e.g. Claude Code's `Bash: curl ...`), or None
         if the call is not an outbound command. An outbound command with no recognisable host counts as outside."""
@@ -134,6 +182,28 @@ def _merge(base: dict[str, dict], overrides: dict[str, dict]) -> dict[str, dict]
     return out
 
 
+def _check_classes(raw: dict[str, Any], controls: dict[str, dict]) -> None:
+    """A misspelt class would silently act as "unclassified" or "no limit"; reject it so the last good policy stays."""
+    c = raw.get("classification")
+    if c is None:
+        return  # no section: every rank is "unclassified" and every limit -1, so nothing reaches a model
+    levels = c.get("levels") or []
+    if not levels or len(set(levels)) != len(levels):
+        raise ValueError("classification.levels must be a non-empty list of distinct names, lowest first")
+    if c.get("action", "redact") not in ("redact", "block"):
+        raise ValueError("classification.action must be redact (withhold the content) or block (stop the request)")
+    named = [("classification.max_to_model", c.get("max_to_model")), ("classification.default", c.get("default"))]
+    named += [(f"classification.tools.{t}", v) for t, v in (c.get("tools") or {}).items()]
+    named += [(f"models.{m}.max_class", (v or {}).get("max_class")) for m, v in (raw.get("models") or {}).items()
+              if "max_class" in (v or {})]
+    named += [(f"barriers.restricted.{r.get('id')}.class", r["class"])
+              for r in (raw.get("barriers") or {}).get("restricted", []) if "class" in r]
+    named += [(f"controls.{cid}.max_class", v["max_class"]) for cid, v in controls.items() if "max_class" in v]
+    for where, cls in named:
+        if cls not in levels:
+            raise ValueError(f"{where}: {cls!r} is not one of classification.levels {levels}")
+
+
 def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None) -> Policy:
     raw = yaml.safe_load(text) or {}
     profile = raw.get("active_profile", "balanced")
@@ -149,6 +219,7 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
 
     for pat in (raw.get("egress") or {}).get("patterns", []):
         re.compile(pat)  # a broken pattern is rejected here, so the last good policy stays active
+    _check_classes(raw, controls)
 
     sigs: list[Signature] = []
     if sig_text is not None:
@@ -179,7 +250,7 @@ def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
         for k in sorted(set(a) | set(b)):
             if a.get(k) != b.get(k):
                 out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
-    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "identity"):
+    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "classification", "barriers", "identity"):
         if old.raw.get(key) != new.raw.get(key):
             out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
     if [x.id for x in old.signatures] != [x.id for x in new.signatures]:

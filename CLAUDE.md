@@ -40,6 +40,10 @@ data-flow block to external sinks, spotlighting (tool results sent inside per-se
 system note; fake markers escaped and flagged; `spotlight` control; tests/test_spotlight.py), budgets (tokens/$/compute/tool calls), signature feed, hash-chained
 audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 118 tests, ~9 s, no network or keys; GitHub Actions runs it on every push/PR (`.github/workflows/test.yml`). Dashboard API: docs/api.md (+ /docs on the gateway).
 `mock/compromised` is a scripted model that obeys injections, for the demo and the tests.
+Data classes (Sun, issue #13; decisions.md D6): `classification` in policy.yaml (public < internal < P2 < DP30, class per
+tool + restricted terms). Nothing above `max_to_model` / a model's `max_class` reaches a model; Jev (external) gets at most
+`injection.jev.max_class: internal`, so a P2 client file blocks the onboarding flow unless that is raised. Falcon and
+`query_datalake` are DP30, so even marcus's model never sees them. tests/test_classification.py checks what actually left.
 Not yet: dashboard views (only a test-prompt page so far), approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.
 
