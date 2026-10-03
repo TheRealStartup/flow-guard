@@ -7,3 +7,5 @@ __pycache__/
 .vercel/
 result
 .direnv/
+gateway/data/
+demo/outbox.jsonl

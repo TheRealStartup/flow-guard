@@ -1,1 +1,15 @@
-{"signatures": []}
+{
+  "feed": "acl-demo-feed",
+  "updated": "2026-10-03",
+  "note": "Patterns from known attacks on AI systems. In production this file is pulled from a threat-intel source; here it is a local file reloaded on change.",
+  "signatures": [
+    {"id": "SIG-PICKLE-RCE", "where": ["tool_result", "tool_args", "prompt"], "pattern": "(c__builtin__|cposix|cos)\\s*\\n\\s*system|__reduce__\\s*\\(", "ref": "Malicious pickle payloads in model files (Hugging Face, 2024)"},
+    {"id": "SIG-TORCH-UNSAFE-LOAD", "where": ["tool_args"], "pattern": "torch\\.load\\((?![^)]*weights_only\\s*=\\s*True)", "ref": "CVE-2025-32434 class: torch.load without weights_only"},
+    {"id": "SIG-YAML-UNSAFE", "where": ["tool_args"], "pattern": "yaml\\.(unsafe_)?load\\((?![^)]*SafeLoader)", "ref": "Unsafe YAML deserialization"},
+    {"id": "SIG-CURL-PIPE-SHELL", "where": ["tool_args", "tool_result", "prompt"], "pattern": "(curl|wget)\\s[^|;]*\\|\\s*(ba|z)?sh", "ref": "Remote script execution"},
+    {"id": "SIG-RM-RF-ROOT", "where": ["tool_args"], "pattern": "rm\\s+-[a-z]*r[a-z]*f?\\s+(/|~|\\$HOME)(\\s|$)", "ref": "Destructive deletion (Replit agent DB deletion, 2025)"},
+    {"id": "SIG-SHADOWRAY", "where": ["tool_args"], "pattern": "/api/jobs/?[\"']?\\s*,?.*entrypoint", "ref": "ShadowRay, CVE-2023-48022: unauthenticated Ray job submission"},
+    {"id": "SIG-MCP-TOOL-POISONING", "where": ["tool_description", "tool_result"], "pattern": "<IMPORTANT>|do not (tell|mention|inform) the user|ignore (all )?(previous|prior) instructions", "ref": "MCP tool poisoning (Invariant Labs, 2025)"},
+    {"id": "SIG-EXFIL-MARKDOWN-IMG", "where": ["tool_result", "prompt"], "pattern": "!\\[[^\\]]*\\]\\(https?://[^)]*\\?[^)]*=", "ref": "Data exfiltration via markdown image URLs"}
+  ]
+}

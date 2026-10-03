@@ -10,6 +10,8 @@ dependencies = [
     "watchfiles",
     "fastmcp",
     "prometheus-client",
+    "python-dotenv",
+    "openai",
 ]
 
 [dependency-groups]

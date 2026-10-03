@@ -1,40 +1,72 @@
-# DRAFT. Single source of truth for all controls. Reloaded live on save.
-version: 0.1-draft
+# AI Control Layer: the single source of truth for every control.
+# Re-read automatically when this file changes; no restart needed. Every audit entry
+# records `version` + a hash of this file, so you can see which policy made a decision.
+version: "0.2"
+
+# strict | balanced | permissive. Profiles override the controls below (see `profiles`).
+active_profile: balanced
 
 defaults:
-  on_error: block            # fail closed | allow (fail open), overridable per control
+  on_error: block            # if a check fails or times out: block (fail closed) | allow (fail open)
 
-users:                       # who the agent acts for (on-behalf-of)
-  alice: {role: support_junior}
-  bob:   {role: fraud_analyst}
-
-models:
-  allowed: [llama-guard3:1b, qwen3:4b]
-
-budgets:                     # team > user > session
-  per_session: {tokens: 50000, tool_calls: 100}
-  per_user_daily: {tokens: 500000}
+# Actions, from weakest to strongest:
+#   allow   control is off
+#   flag    let it through, but record it in the audit log
+#   redact  replace the sensitive part (PII/secrets → reversible tokens; injected text → quarantined)
+#   block   stop the request / drop the tool call
 
 controls:
-  - id: pii.card_number
-    kind: deterministic      # regex + Luhn
-    action: redact           # allow | redact | require_approval | block
-    token_format: keep_last4
-    maps_to: [OWASP-LLM02]
-  - id: flow.pci_to_external
-    kind: dataflow           # session holds PCI label -> external sink
-    action: require_approval
-    approval: {four_eyes: true, bind_to_args_hash: true}
-    maps_to: [OWASP-LLM02, OWASP-LLM06]
-  - id: injection.classifier
-    kind: semantic
+  models.allowlist:   {action: block}
+  budget:             {action: block}
+  pii.card:           {action: redact}    # regex + Luhn checksum
+  pii.iban:           {action: redact}
+  pii.pesel:          {action: redact}    # Polish national ID, with checksum
+  secrets:            {action: redact}    # API keys, private keys
+  signatures:         {action: block, feed: signatures.json}
+  access.tools:       {action: block}     # role → allowed tools
+  flow.sensitive_to_external:
     action: block
-    threshold: 0.8
-    maps_to: [OWASP-LLM01]
+    mode: value       # value: block only if the call carries sensitive data | session: block any external call once the session holds sensitive data
+  injection.jev:
+    action: redact    # redact = quarantine the suspicious message; block = stop the whole request
+    threshold: 0.80   # Jev's probability that the text tries to instruct the agent
+    timeout_s: 8       # Jev measured at 2–4.5 s on Sat afternoon (advertised 70–500 ms)
+    on_error: block
+
+profiles:
+  strict:
+    secrets: {action: block}
+    flow.sensitive_to_external: {mode: session}
+    injection.jev: {threshold: 0.50, action: block}
+  balanced: {}
+  permissive:
+    pii.iban: {action: flag}
+    pii.pesel: {action: flag}
+    injection.jev: {threshold: 0.95, action: flag, on_error: allow}
+
+# Allowed models and where they run. Prices are USD per million tokens, used only if
+# the provider does not report the cost itself. Local models cost $0 but use compute time.
+models:
+  deepseek/deepseek-v4.1-flash: {upstream: openrouter, input_per_m: 0.10, output_per_m: 0.30}
+  qwen3:4b:                     {upstream: ollama}
+  mock/compromised:             {upstream: mock}   # scripted model that obeys injected instructions (demo + tests)
+
+budgets:
+  session:
+    max_tokens: 60000
+    max_cost_usd: 0.05
+    max_tool_calls: 20
+    max_compute_seconds: 300
+
+# Who the agent acts for (sent as the X-User header) and what each role may do.
+users:
+  alice: {role: support_junior}
+  bob:   {role: fraud_analyst}
+roles:
+  support_junior: {tools: [get_customer, send_email]}
+  fraud_analyst:  {tools: [get_customer, send_email, charge_card]}
+  default:        {tools: []}
 
 sinks:
-  external: [send_email, http_fetch]
-
-signature_feed:
-  url: file://../policy/signatures.json
-  refresh_seconds: 60
+  external: [send_email, http_post]   # data leaves the organisation here
+  detokenize: [charge_card]           # real values are put back only for these tools

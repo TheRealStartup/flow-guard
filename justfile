@@ -44,3 +44,7 @@ lint:
 
 fmt:
     cd gateway && ruff format . && ruff check --fix .
+
+# run the demo agent through the gateway: just agent alice "Look up customer 42"
+agent user prompt:
+    cd gateway && uv run python ../demo/agent.py {{user}} "{{prompt}}"
