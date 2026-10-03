@@ -75,11 +75,13 @@ users:
   bob:    {role: fraud_analyst}
   olivia: {role: onboarding_analyst, side: public, assigned_clients: [NW-2041]}   # onboarding scenario
   marcus: {role: mna_banker, side: private, deals: [falcon]}                      # onboarding scenario
+  devon:  {role: developer}                                                       # developer scenario (stub)
 roles:
   support_junior:     {tools: [get_customer, send_email]}
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
   onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, send_email]}
   mna_banker:         {tools: [search_documents, send_email]}
+  developer:          {tools: [list_files, read_file, run_tests, http_post]}
   default:            {tools: []}
 
 # Information barriers (US-1.3). Content naming a restricted deal is withheld from anyone not on that deal,

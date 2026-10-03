@@ -29,7 +29,7 @@ def dev_keys() -> dict[str, str]:
             for line in path.read_text().splitlines() if line.startswith("ACL_KEY_")}
 
 
-SCENARIOS = {"support": "world", "onboarding": "onboarding"}  # scenario name -> module in demo/
+SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer"}  # scenario name -> module in demo/
 
 
 def _world(scenario: str):

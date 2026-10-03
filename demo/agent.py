@@ -14,7 +14,7 @@ import uuid
 from openai import OpenAI
 
 sys.path.insert(0, os.path.dirname(__file__))
-SCENARIOS = {"support": "world", "onboarding": "onboarding"}  # scenario name -> module in demo/
+SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer"}  # scenario name -> module in demo/
 
 
 def dev_key(user: str) -> str:

@@ -104,3 +104,17 @@ def test_public_side_user_cannot_search_their_way_in(gw, outbox):
                        {"role": "tool", "tool_call_id": "s", "content": result}], session="s2", tools=onboarding.TOOLS)
     last = gw.upstream.seen[-1]["messages"][-1]["content"]
     assert "Kestrel" not in last and "outside your access" in last and "Sector note" in last  # others kept, deal dropped
+
+
+# ---------- developer scenario (stub) ----------
+
+def test_developer_stub_secret_in_repo_never_reaches_the_model(gw):
+    import developer
+
+    msgs = [{"role": "system", "content": developer.SYSTEM}, {"role": "user", "content": "get the tests passing"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "r", "type": "function", "function": {"name": "read_file", "arguments": '{"path": ".env"}'}}]},
+            {"role": "tool", "tool_call_id": "r", "content": developer.run_tool("read_file", {"path": ".env"})}]
+    gw.upstream.next_reply = {"text": "ok"}
+    r = gw.chat("devon", msgs, tools=developer.TOOLS).json()
+    assert ("secrets", "redact") in [(d["control"], d["action"]) for d in r["acl"]["decisions"]]
+    assert "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789" not in json.dumps(gw.upstream.seen)
