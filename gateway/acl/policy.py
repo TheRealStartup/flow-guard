@@ -152,6 +152,23 @@ class Policy:
         own = (self.models.get(model) or {}).get("max_class")
         return min(self.max_to_model, self._limit(own)) if own is not None else self.max_to_model
 
+    @property
+    def datalake(self) -> dict[str, Any]:
+        return self.raw.get("datalake") or {}
+
+    def query_class(self, query: str | None) -> str | None:
+        """Class of a named data-lake query's result: its transformation's class, else its dataset's. None if unknown."""
+        q = (self.datalake.get("queries") or {}).get(query) if isinstance(query, str) else None
+        if not q:
+            return None
+        if "transformation" in q:
+            return ((self.datalake.get("transformations") or {}).get(q["transformation"]) or {}).get("class")
+        return ((self.datalake.get("datasets") or {}).get(q.get("dataset")) or {}).get("class")
+
+    def may_query(self, user: str, query: str | None) -> bool:
+        q = (self.datalake.get("queries") or {}).get(query) if isinstance(query, str) else None
+        return bool(q) and self.role_of(user) in (q.get("roles") or [])
+
     def judge_limit(self, cid: str = "injection.jev") -> int:
         """What an external judge may receive: its own `max_class`, never above `max_to_model`. No max_class: nothing."""
         return min(self.max_to_model, self._limit(self.control(cid).get("max_class")))
@@ -199,9 +216,21 @@ def _check_classes(raw: dict[str, Any], controls: dict[str, dict]) -> None:
     named += [(f"barriers.restricted.{r.get('id')}.class", r["class"])
               for r in (raw.get("barriers") or {}).get("restricted", []) if "class" in r]
     named += [(f"controls.{cid}.max_class", v["max_class"]) for cid, v in controls.items() if "max_class" in v]
+    lake = raw.get("datalake") or {}
+    datasets, transforms = lake.get("datasets") or {}, lake.get("transformations") or {}
+    named += [(f"datalake.datasets.{d}.class", (v or {}).get("class")) for d, v in datasets.items()]
+    named += [(f"datalake.transformations.{t}.class", (v or {}).get("class")) for t, v in transforms.items()]
     for where, cls in named:
         if cls not in levels:
             raise ValueError(f"{where}: {cls!r} is not one of classification.levels {levels}")
+    for t, v in transforms.items():
+        if v.get("from") not in datasets:
+            raise ValueError(f"datalake.transformations.{t}.from: {v.get('from')!r} is not a dataset")
+    for name, q in (lake.get("queries") or {}).items():
+        if ("transformation" in q) == ("dataset" in q):
+            raise ValueError(f"datalake.queries.{name}: needs exactly one of dataset or transformation")
+        if ("dataset" in q and q["dataset"] not in datasets) or ("transformation" in q and q["transformation"] not in transforms):
+            raise ValueError(f"datalake.queries.{name}: refers to an unknown dataset or transformation")
 
 
 def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None) -> Policy:
@@ -250,7 +279,7 @@ def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
         for k in sorted(set(a) | set(b)):
             if a.get(k) != b.get(k):
                 out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
-    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "classification", "barriers", "identity"):
+    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "classification", "datalake", "barriers", "identity"):
         if old.raw.get(key) != new.raw.get(key):
             out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
     if [x.id for x in old.signatures] != [x.id for x in new.signatures]:

@@ -69,3 +69,13 @@ gets them, the deal team included.
 **Known limit:** a tool result's class comes from the call id this gateway let through. For history the gateway never
 saw (a client that starts mid-conversation), it falls back to the tool name the agent claims. The MCP gateway removes
 that gap, because it sees the tool's own result.
+
+## D7 · Data lake: named queries, refused before they run, labels verified (first demo)
+The agent never writes a query; it names one from `datalake.queries` in policy.yaml (`demo/datalake.py` holds the
+synthetic datasets). The gateway refuses a call before it runs if the query is unknown, the user's role may not run
+it, or its result could not be sent on (above the model's limit, or above Jev's while the AI check is on). Every
+refusal has the same reason, so it reveals nothing about which datasets exist, their class or who may see them.
+The lake labels each result; the gateway takes the class from the query it let through (not from the arguments the
+agent echoes back) and withholds a result whose label is missing or differs. A lower-class view of a dataset exists
+only as a declared transformation: `sector_counts` gives the deal team counts per sector, groups under 3 dropped,
+never the deals. The public side gets no pipeline view at all, because a count of pending deals is MNPI to them.
