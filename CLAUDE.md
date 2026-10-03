@@ -44,6 +44,8 @@ Data classes (Sun, issue #13; decisions.md D6): `classification` in policy.yaml 
 tool + restricted terms). Nothing above `max_to_model` / a model's `max_class` reaches a model; Jev (external) gets at most
 `injection.jev.max_class: internal`, so a P2 client file blocks the onboarding flow unless that is raised. Falcon and
 `query_datalake` are DP30, so even marcus's model never sees them. tests/test_classification.py checks what actually left.
+Data lake (D7): `query_datalake` runs named queries from `datalake` in policy.yaml over demo/datalake.py; refused before
+running (unknown / role / class), one neutral reason, labels verified, lower views only via a declared transformation.
 Not yet: dashboard views (only a test-prompt page so far), approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.
 
