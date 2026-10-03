@@ -3,6 +3,7 @@ every control fire. It is a client like any other: it calls the gateway's own /v
 with the chosen demo user's API key, so identity and every control apply. Nothing is bypassed.
 """
 
+import importlib
 import json
 import sys
 import uuid
@@ -28,20 +29,21 @@ def dev_keys() -> dict[str, str]:
             for line in path.read_text().splitlines() if line.startswith("ACL_KEY_")}
 
 
-def _world():
+SCENARIOS = {"support": "world", "onboarding": "onboarding"}  # scenario name -> module in demo/
+
+
+def _world(scenario: str):
     if str(DEMO) not in sys.path:
         sys.path.insert(0, str(DEMO))
-    import world
-
-    return world
+    return importlib.import_module(SCENARIOS[scenario])  # demo code, loaded only when Try it is used
 
 
-async def run(app, user: str, prompt: str, model: str, max_steps: int = 6) -> dict[str, Any]:
-    world = _world()
+async def run(app, user: str, prompt: str, model: str, scenario: str = "support", max_steps: int = 6) -> dict[str, Any]:
+    world = _world(scenario)
     key = dev_keys().get(user, "")
     sid = f"try-{user}-{uuid.uuid4().hex[:6]}"
     headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": "dashboard try-it"}
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": getattr(world, "SYSTEM", SYSTEM)}, {"role": "user", "content": prompt}]
     steps: list[dict[str, Any]] = []
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://acl", timeout=180) as c:
@@ -66,4 +68,4 @@ async def run(app, user: str, prompt: str, model: str, max_steps: int = 6) -> di
                 # gets a masked preview: the reporting UI must not become a leak of its own.
                 steps.append({"kind": "tool", "name": tc["function"]["name"], "result_preview": safe_excerpt(result, width=300)})
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-    return {"session": sid, "user": user, "model": model, "steps": steps}
+    return {"session": sid, "user": user, "scenario": scenario, "model": model, "steps": steps}

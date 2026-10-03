@@ -12,7 +12,7 @@ from dataclasses import dataclass
 class Span:
     start: int
     end: int
-    kind: str  # CARD | IBAN | PESEL | SECRET
+    kind: str  # CARD | IBAN | PESEL | PASSPORT | SECRET
     value: str
     control: str  # policy control id that owns this detector
 
@@ -40,6 +40,8 @@ def pesel_ok(p: str) -> bool:
 CARD_RE = re.compile(r"(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])")
 IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b")
 PESEL_RE = re.compile(r"(?<!\d)\d{11}(?!\d)")
+# Passport numbers have no common checksum, so we only take them where the text says so ("passport": "C01X00T47").
+PASSPORT_RE = re.compile(r"passport(?:[ _-]?(?:no|number|nr))?[\"']?\s*[:=]?\s*[\"']?((?=[A-Z0-9]*\d)[A-Z0-9]{6,9})\b", re.IGNORECASE)
 SECRET_RES = [
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key id
     re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_-]{20,}"),  # OpenAI / Anthropic / OpenRouter
@@ -61,6 +63,8 @@ def find_sensitive(text: str) -> list[Span]:
     for m in PESEL_RE.finditer(text):
         if pesel_ok(m.group()):
             spans.append(Span(m.start(), m.end(), "PESEL", m.group(), "pii.pesel"))
+    for m in PASSPORT_RE.finditer(text):
+        spans.append(Span(m.start(1), m.end(1), "PASSPORT", m.group(1), "pii.passport"))
     for rx in SECRET_RES:
         for m in rx.finditer(text):
             spans.append(Span(m.start(), m.end(), "SECRET", m.group(), "secrets"))

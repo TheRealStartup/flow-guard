@@ -32,6 +32,7 @@ class TryRequest(BaseModel):
     user: str = "alice"
     prompt: str
     model: str = "mock/compromised"
+    scenario: str = "support"  # support | onboarding
 
 
 def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstream: Upstream = call_upstream) -> FastAPI:
@@ -111,7 +112,9 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             raise HTTPException(403, "Try it is only available from localhost")
         if req.user not in tryit.dev_keys():
             raise HTTPException(400, f"unknown demo user {req.user!r}; known: {sorted(tryit.dev_keys())}")
-        return await tryit.run(app, req.user, req.prompt, req.model)
+        if req.scenario not in tryit.SCENARIOS:
+            raise HTTPException(400, f"unknown scenario {req.scenario!r}; known: {sorted(tryit.SCENARIOS)}")
+        return await tryit.run(app, req.user, req.prompt, req.model, req.scenario)
 
     @app.get("/api/audit/verify")
     def audit_verify():

@@ -21,6 +21,9 @@ controls:
   pii.card:           {action: redact}    # regex + Luhn checksum
   pii.iban:           {action: redact}
   pii.pesel:          {action: redact}    # Polish national ID, with checksum
+  pii.passport:       {action: redact}    # passport numbers, where the text labels them
+  barrier.mnpi:       {action: redact}    # information barrier: redact = withhold restricted results from the wrong side
+  access.scope:       {action: block}     # tool arguments limited to the user's own scope (e.g. assigned clients)
   secrets:            {action: redact}    # API keys, private keys
   signatures:         {action: block, feed: signatures.json}
   access.tools:       {action: block}     # role → allowed tools
@@ -68,13 +71,28 @@ identity:
 
 # What each user's role may do.
 users:
-  alice: {role: support_junior}
-  bob:   {role: fraud_analyst}
+  alice:  {role: support_junior}
+  bob:    {role: fraud_analyst}
+  olivia: {role: onboarding_analyst, side: public, assigned_clients: [NW-2041]}   # onboarding scenario
+  marcus: {role: mna_banker, side: private, deals: [falcon]}                      # onboarding scenario
 roles:
-  support_junior: {tools: [get_customer, send_email]}
-  fraud_analyst:  {tools: [get_customer, send_email, charge_card]}
-  default:        {tools: []}
+  support_junior:     {tools: [get_customer, send_email]}
+  fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
+  onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, send_email]}
+  mna_banker:         {tools: [search_documents, send_email]}
+  default:            {tools: []}
+
+# Information barriers (US-1.3). Content naming a restricted deal is withheld from anyone not on that deal,
+# with a reply that does not confirm the deal exists. Nobody, not even the deal team, may send it outside.
+barriers:
+  public_message: "Some results are outside your access."
+  restricted:
+    - {id: falcon, terms: ["Project Falcon", "Kestrel Dynamics", "KSTL"]}
+
+# Limits on tool arguments: a tool may only be called for things inside the user's own scope.
+scopes:
+  get_client_file: {argument: client_id, user_field: assigned_clients}
 
 sinks:
-  external: [send_email, http_post]   # data leaves the organisation here
-  detokenize: [charge_card]           # real values are put back only for these tools
+  external: [send_email, http_post]                # data leaves the organisation here
+  detokenize: [charge_card, screen_sanctions]      # real values are put back only for these tools

@@ -84,6 +84,18 @@ def _with_excerpt(ds: list[Decision], text: str) -> list[Decision]:
     return ds
 
 
+def _string_fields(node: Any) -> list[tuple[Any, Any, str]]:
+    """(parent, key, text) for every string field in a JSON document."""
+    out: list[tuple[Any, Any, str]] = []
+    items = node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else []
+    for k, v in items:
+        if isinstance(v, str):
+            out.append((node, k, v))
+        elif isinstance(v, (dict, list)):
+            out += _string_fields(v)
+    return out
+
+
 WHERE = {"user": "prompt", "system": "prompt", "developer": "prompt", "tool": "tool_result", "assistant": "assistant"}
 
 
@@ -138,6 +150,30 @@ class Engine:
                 text = text[: span.start] + s.tokenize(span.kind, span.value) + text[span.end :]
         return text, out[::-1]
 
+    def _barrier(self, p: Policy, s: Session, text: str, where: str) -> tuple[str, list[Decision]]:
+        """Information barrier (US-1.3): content naming a restricted deal reaches only users on that deal.
+        For everyone else it is withheld with a neutral message that does not confirm the deal exists."""
+        action = p.action("barrier.mnpi")
+        hits = p.restricted_hits(text)
+        if action == "allow" or not hits:
+            return text, []
+        if all(p.cleared(s.user, h) for h in hits):
+            s.labels.add("MNPI")  # the deal team may see it; the flow rule still keeps it inside
+            return text, []
+        blocked = sorted({h for h in hits if not p.cleared(s.user, h)})
+        d = Decision("barrier.mnpi", action, where, f"restricted deal(s) {blocked} withheld: {s.user} is not on the deal team",
+                     excerpt=f"[WITHHELD: {p.barrier_message}]")
+        if action != "redact":
+            return text, [d]
+        try:  # a list of documents: drop only the restricted ones, keep the rest
+            items = json.loads(text)
+            if isinstance(items, list):
+                kept = [it for it in items if not p.restricted_hits(json.dumps(it))]
+                return json.dumps([*kept, {"withheld": p.barrier_message}]), [d]
+        except ValueError:
+            pass
+        return f"[WITHHELD: {p.barrier_message}]", [d]
+
     def _over_budget(self, p: Policy, s: Session) -> str | None:
         b = p.session_budget
         for key, used in (("max_tokens", s.tokens), ("max_cost_usd", s.cost_usd), ("max_compute_seconds", s.compute_s)):
@@ -190,8 +226,10 @@ class Engine:
                 msg["content"] = s.quarantined[h]
                 continue
             for get, set_ in list(_text_parts(msg)):
-                text, ds = self._signatures(p, get(), where)
+                text, ds0 = self._barrier(p, s, get(), where) if where in ("tool_result", "prompt") else (get(), [])
+                text, ds = self._signatures(p, text, where)
                 text, ds2 = self._redact(p, s, text, where)
+                ds = ds0 + ds
                 set_(text)
                 _with_excerpt(ds + ds2, text)
                 if new:
@@ -214,8 +252,8 @@ class Engine:
         c = p.control("injection.jev")
         threshold, timeout = float(c.get("threshold", 0.8)), float(c.get("timeout_s", 5))
 
-        async def one(msg, h, where):
-            text = "\n".join(get() for get, _ in _text_parts(msg))
+        async def judge(text: str, where: str) -> Decision | None:
+            """One Jev call on one piece of text. Returns the decision (allow ones are telemetry)."""
             if not text.strip():
                 return None
             excerpt = safe_excerpt(text)
@@ -230,17 +268,44 @@ class Engine:
                 return Decision("injection.jev", "block" if act == "block" else "flag", where, f"check failed ({type(e).__name__}: {e}); on_error={act}", ms, excerpt=excerpt)
             ms = (time.perf_counter() - t) * 1000
             what = "jailbreak" if where == "prompt" else "prompt injection"
-            if v.injection < threshold:  # recorded too: the score and latency are telemetry
+            if v.injection < threshold:
                 return Decision("injection.jev", "allow", where, f"{what} p={v.injection:.2f} < {threshold}", ms, v.injection, excerpt)
-            d = Decision("injection.jev", c.get("action", "block"), where, f"{what} p={v.injection:.2f} >= {threshold}", ms, v.injection, excerpt)
-            if d.action == "redact":
-                replacement = QUARANTINE.format(score=v.injection)
-                s.quarantined[h] = replacement
-                msg["content"] = replacement
-            return d
+            return Decision("injection.jev", c.get("action", "block"), where, f"{what} p={v.injection:.2f} >= {threshold}", ms, v.injection, excerpt)
+
+        async def one(msg, h, where) -> list[Decision]:
+            content = msg.get("content")
+            # A structured tool result (JSON) is judged field by field, so a poisoned paragraph is removed while the
+            # rest of the record (names, owners, amounts) stays usable. Anything else is judged as a whole.
+            doc = None
+            if where == "tool_result" and isinstance(content, str):
+                try:
+                    doc = json.loads(content)
+                except ValueError:
+                    doc = None
+            fields = _string_fields(doc) if isinstance(doc, (dict, list)) else []
+            # Long fields are judged one by one; all short fields together as one more piece, so nothing goes unjudged.
+            pieces = [[f] for f in fields if len(f[2]) >= 60]
+            short = [f for f in fields if len(f[2]) < 60]
+            if short and pieces:
+                pieces.append(short)
+            if not pieces:
+                d = await judge("\n".join(get() for get, _ in _text_parts(msg)), where)
+                if d and d.action == "redact":
+                    s.quarantined[h] = msg["content"] = QUARANTINE.format(score=d.score)
+                return [d] if d else []
+            ds = await asyncio.gather(*(judge("\n".join(t for _, _, t in piece), where) for piece in pieces))
+            hit = False
+            for piece, d in zip(pieces, ds):
+                if d and d.action == "redact":
+                    for parent, key, _ in piece:
+                        parent[key] = QUARANTINE.format(score=d.score)
+                    hit = True
+            if hit:
+                s.quarantined[h] = msg["content"] = json.dumps(doc)
+            return [d for d in ds if d]
 
         results = await asyncio.gather(*(one(*it) for it in items))
-        ds = [d for d in results if d]
+        ds = [d for r in results for d in r]
         ex.decisions += ds
         return next((d for d in ds if d.action == "block"), None)
 
@@ -275,9 +340,20 @@ class Engine:
                     ds.append(Decision("access.tools", p.action("access.tools"), where, f"role {p.role_of(s.user)!r} may not call {name}"))
                 ds += self._signatures(p, args, "tool_args")[1]
                 ds = [Decision(d.control, d.action, where, d.reason) for d in ds]
+                if (scope := p.scope_for(name)) and p.action("access.scope") != "allow":
+                    try:
+                        val = json.loads(args or "{}").get(scope["argument"])
+                    except (ValueError, AttributeError):
+                        val = None
+                    allowed = p.user(s.user).get(scope["user_field"], [])
+                    if val not in allowed:
+                        ds.append(Decision("access.scope", p.action("access.scope"), where,
+                                           f"{scope['argument']}={val!r} is not in {s.user}'s {scope['user_field']}; the call never runs"))
                 if name in p.sinks("external") and p.action("flow.sensitive_to_external") != "allow":
                     mode = p.control("flow.sensitive_to_external").get("mode", "value")
                     carried = {m.group(1) for m in TOKEN_RE.finditer(args)} | {sp.kind for sp in find_sensitive(args)}
+                    if p.restricted_hits(args):
+                        carried.add("MNPI")
                     if carried or (mode == "session" and s.labels):
                         what = sorted(carried) if carried else sorted(s.labels)
                         ds.append(Decision("flow.sensitive_to_external", p.action("flow.sensitive_to_external"), where,

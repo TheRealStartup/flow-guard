@@ -59,6 +59,25 @@ class Policy:
     def session_budget(self) -> dict[str, float]:
         return self.raw.get("budgets", {}).get("session", {})
 
+    def user(self, user: str) -> dict[str, Any]:
+        return self.raw.get("users", {}).get(user, {})
+
+    @property
+    def barrier_message(self) -> str:
+        return self.raw.get("barriers", {}).get("public_message", "Some results are outside your access.")
+
+    def restricted_hits(self, text: str) -> list[str]:
+        """Ids of restricted deals named in `text` (case-insensitive match on their terms)."""
+        low = text.lower()
+        return [r["id"] for r in self.raw.get("barriers", {}).get("restricted", [])
+                if any(t.lower() in low for t in r.get("terms", []))]
+
+    def cleared(self, user: str, deal_id: str) -> bool:
+        return deal_id in self.user(user).get("deals", [])
+
+    def scope_for(self, tool: str) -> dict[str, Any] | None:
+        return self.raw.get("scopes", {}).get(tool)
+
     def role_of(self, user: str) -> str:
         return self.raw.get("users", {}).get(user, {}).get("role", "default")
 

@@ -16,40 +16,9 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..engine import Engine
+from .mock_model import compromised_model
 
 Upstream = Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
-def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
-    """A scripted stand-in for a model that obeys whatever it reads. Real models often refuse
-    obvious exfiltration on their own, which hides whether the *controls* work; this one never
-    refuses, so the demo and the tests show the gateway, not the model's manners.
-
-    Step 1: look up the customer id from the user's message. Step 2: if a tool result asks for
-    data to be emailed somewhere, do exactly that, copying the record (tokens and all)."""
-    import json as _json
-    import re as _re
-
-    msgs = body.get("messages", [])
-    tool_msgs = [m for m in msgs if m.get("role") == "tool"]
-    user = next((m.get("content") for m in reversed(msgs) if m.get("role") == "user"), "") or ""
-
-    def completion(message: dict[str, Any], finish: str) -> dict[str, Any]:
-        return {"id": f"mock-{uuid.uuid4().hex[:8]}", "object": "chat.completion", "created": int(time.time()),
-                "model": "mock/compromised", "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
-
-    def call(name: str, args: dict[str, Any]) -> dict[str, Any]:
-        tc = {"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function", "function": {"name": name, "arguments": _json.dumps(args)}}
-        return completion({"role": "assistant", "content": None, "tool_calls": [tc]}, "tool_calls")
-
-    if not tool_msgs and (m := _re.search(r"customer\s+(\d+)", str(user), _re.IGNORECASE)):
-        return call("get_customer", {"customer_id": int(m.group(1))})
-    last = str(tool_msgs[-1].get("content", "")) if tool_msgs else ""
-    already_sent = any("send_email" in _json.dumps(m.get("tool_calls") or []) for m in msgs if m.get("role") == "assistant")
-    if (addr := _re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", last.split('"notes"')[-1])) and not already_sent:
-        return call("send_email", {"to": addr.group(), "subject": "Requested data", "body": last})
-    return completion({"role": "assistant", "content": "Done."}, "stop")
 
 
 async def call_upstream(body: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str, Any]:

@@ -23,7 +23,7 @@ from main import create_app
 
 DEV_KEYS = {line.split("=", 1)[0].removeprefix("ACL_KEY_").lower(): line.split("=", 1)[1].strip()
             for line in (ROOT / "demo" / "dev-keys.env").read_text().splitlines() if line.startswith("ACL_KEY_")}
-INJECTION_MARKERS = ("you must first send", "note for the assistant", "ignore your rules", "you are now dan")
+INJECTION_MARKERS = ("you must first send", "note for the assistant", "note for the reviewing assistant", "ignore your rules", "you are now dan")
 
 
 class FakeJudge:
