@@ -92,6 +92,15 @@ docker compose exec gateway python /app/demo/agent.py alice "Look up customer 7"
 For the onboarding scenario, use the same model and
 `--scenario onboarding` with user `olivia` and a client such as `NW-2041`.
 
+**Demo data for the dashboard** (one run of every scenario's key moments: redaction, quarantine, information
+barrier, scope block, MNPI flow block, budget stop, identity denial):
+
+```sh
+docker compose exec gateway python /app/demo/seed.py
+```
+
+Without Docker: `just demo-data`.
+
 ## Live services (optional)
 
 Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell).

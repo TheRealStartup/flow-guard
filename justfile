@@ -56,3 +56,7 @@ agent user prompt model="deepseek/deepseek-v4.1-flash":
 # new API key for a user's agent: prints the key (give it to the agent) and the line for policy/identities.yaml
 new-key user agent:
     @python3 -c "import secrets,hashlib; k='acl_'+'{{user}}'+'_'+secrets.token_hex(16); print('key (give to the agent, store nowhere else):', k); print('add to policy/identities.yaml:'); print('  - {user: {{user}}, agent: {{agent}}, key_sha256: '+hashlib.sha256(k.encode()).hexdigest()+'}')"
+
+# fill the audit log with one run of every scenario (needs the gateway running): dashboard data
+demo-data model="mock/compromised":
+    cd gateway && uv run python ../demo/seed.py --model {{model}}
