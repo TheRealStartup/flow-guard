@@ -12,6 +12,9 @@ leaves this file.
 - **Request access** (US-8.3), merged with Paul's **feedback claims**: "this block was wrong" → counted for business impact; confirmed false alarms become test cases.
 - **Emergency override** ("break glass"): a written reason, a second approver, a flagged audit entry.
 
+## Demo scenarios (parked, Paul Sat ~18:50)
+- **Inbox scenario:** an inbox tool with a deal email (MNPI), an email with client personal data, and a poisoned email. Covers US-1.1 (masking in email content) and US-1.3 (information barriers through email: a public-side analyst must not see a private-side deal, and the denial must not reveal that the deal exists).
+
 ## Detection and feeds
 - **Fingerprints of known secrets (Exact Data Match).** HMAC fingerprints (with a key the gateway holds, never a plain hash) of our real secrets, pushed by the secret store on rotation. A hit means block + alert + rotate. Same mechanism for real customer card numbers and IBANs: a real customer's card versus any number that passes the Luhn check. Demo: a DB password no pattern catches.
 - **Exfiltration destinations feed:** webhook.site, ngrok, paste sites, newly registered domains → the data-flow rule gets a "where to" dimension.
