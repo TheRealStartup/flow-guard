@@ -1,0 +1,9 @@
+.env
+.env.local
+node_modules/
+.next/
+.venv/
+__pycache__/
+.vercel/
+result
+.direnv/

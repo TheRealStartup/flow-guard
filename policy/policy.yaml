@@ -1,0 +1,40 @@
+# DRAFT. Single source of truth for all controls. Reloaded live on save.
+version: 0.1-draft
+
+defaults:
+  on_error: block            # fail closed | allow (fail open), overridable per control
+
+users:                       # who the agent acts for (on-behalf-of)
+  alice: {role: support_junior}
+  bob:   {role: fraud_analyst}
+
+models:
+  allowed: [llama-guard3:1b, qwen3:4b]
+
+budgets:                     # team > user > session
+  per_session: {tokens: 50000, tool_calls: 100}
+  per_user_daily: {tokens: 500000}
+
+controls:
+  - id: pii.card_number
+    kind: deterministic      # regex + Luhn
+    action: redact           # allow | redact | require_approval | block
+    token_format: keep_last4
+    maps_to: [OWASP-LLM02]
+  - id: flow.pci_to_external
+    kind: dataflow           # session holds PCI label -> external sink
+    action: require_approval
+    approval: {four_eyes: true, bind_to_args_hash: true}
+    maps_to: [OWASP-LLM02, OWASP-LLM06]
+  - id: injection.classifier
+    kind: semantic
+    action: block
+    threshold: 0.8
+    maps_to: [OWASP-LLM01]
+
+sinks:
+  external: [send_email, http_fetch]
+
+signature_feed:
+  url: file://../policy/signatures.json
+  refresh_seconds: 60
