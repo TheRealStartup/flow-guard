@@ -1,0 +1,66 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+      target: runtime
+    environment:
+      ACL_JUDGE: ${ACL_JUDGE:-demo}
+      ACL_POLICY: /app/policy/policy.yaml
+      ACL_AUDIT: /app/gateway/data/audit.jsonl
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OLLAMA_URL: http://ollama:11434
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
+      - "127.0.0.1:${DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - ./policy:/app/policy:ro
+      - audit-data:/app/gateway/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  dashboard:
+    # Keep the gateway's localhost-only /api/try demo protected: the dashboard
+    # reaches it over loopback rather than weakening the API's local-client check.
+    network_mode: service:gateway
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    environment:
+      BACKEND_URL: http://127.0.0.1:8000
+      ACL_MODEL: ${ACL_MODEL:-mock/compromised}
+      ACL_KEY: ${ACL_KEY:-acl_dev_alice_6e6b08d7f51bc504a3073311}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+      target: test
+
+volumes:
+  audit-data:
+  ollama-data:

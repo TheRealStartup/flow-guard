@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/.env.*
+**/*.env
+!demo/dev-keys.env
+gateway/data
+demo/outbox.jsonl
+.direnv

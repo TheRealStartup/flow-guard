@@ -17,6 +17,7 @@ from acl import tryit
 from acl.adapters.llm_proxy import Upstream, call_upstream
 from acl.adapters.llm_proxy import router as llm_router
 from acl.detectors.jev import JevJudge, Judge
+from acl.detectors.demo import DemoJudge
 from acl.engine import Engine
 from acl.policy import PolicyStore
 from acl.state import AuditLog
@@ -50,7 +51,8 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     @app.get("/api/health")
     def health():
         p = policies.get()
-        return {"ok": True, "policy_version": p.version, "profile": p.profile, "policy_error": policies.last_error}
+        return {"ok": True, "policy_version": p.version, "profile": p.profile, "policy_error": policies.last_error,
+                "judge": "demo" if isinstance(judge, DemoJudge) else "jev" if isinstance(judge, JevJudge) else "custom"}
 
     @app.get("/api/policy")
     def policy():
@@ -127,4 +129,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     return app
 
 
-app = create_app(POLICY, AUDIT, JevJudge())
+judge_mode = os.getenv("ACL_JUDGE", "jev")
+if judge_mode not in ("demo", "jev"):
+    raise ValueError("ACL_JUDGE must be 'demo' or 'jev'")
+app = create_app(POLICY, AUDIT, DemoJudge() if judge_mode == "demo" else JevJudge())

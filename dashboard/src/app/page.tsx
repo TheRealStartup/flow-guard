@@ -31,6 +31,8 @@ export default function Home() {
         if (done) break;
         setAnswer((a) => a + decoder.decode(value, { stream: true }));
       }
+    } catch {
+      setAnswer("Could not reach the gateway. Check docker compose logs.");
     } finally {
       setBusy(false);
     }
@@ -38,7 +40,19 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-6">
-      <h1 className="text-2xl font-semibold">HackYeah starter</h1>
+      <h1 className="text-2xl font-semibold">AI Control Layer</h1>
+      <p className="text-sm text-muted-foreground">
+        Compose defaults to an offline demo: scripted model and keyword checks,
+        not a real AI security classifier. Responses include the policy decisions.
+        Configure live services in .env; see README.md.
+      </p>
+      <p className="text-sm">
+        <a className="underline" href="/api/health" target="_blank" rel="noreferrer">Health</a>
+        {" · "}
+        <a className="underline" href="/api/metrics" target="_blank" rel="noreferrer">Metrics</a>
+        {" · "}
+        <a className="underline" href="/api/events" target="_blank" rel="noreferrer">Audit events</a>
+      </p>
       <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} />
       <Button onClick={send} disabled={busy || !message.trim()}>
         {busy ? "Thinking…" : "Send"}
