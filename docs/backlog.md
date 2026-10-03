@@ -1,5 +1,12 @@
 # Backlog (from the team's user stories, reviewed Sat 15:30)
 
+## Team / admin, now
+- [ ] **Agree on the demo world** (customer DB + inbox? public-side analyst + private-side banker?) before the dashboard is designed around it.
+- [ ] **Mentor talk:** (1) deadline: the rules say the task runs "11:00 PM Oct 3" to "11:00 PM Oct 4", the event schedule ends coding Sun 11:00;
+      plan for 11:00 AM until confirmed; (2) do judges run our tests with our keys? (3) which weights are correct (tests 15 or 20, practicality 15 or 10)?
+- [ ] **HackTribe:** register the team, project title, members; check whether there is a draft submission (2025 had one at Sat 20:00).
+      Final: description + PDF of at most 10 slides, English or Polish.
+
 Full reasoning: the vault note "HackYeah 2026 — AI Control Layer", section "User stories review".
 
 ## MVP, tonight
@@ -19,9 +26,14 @@ Budgets / runaway loops · attack signatures / supply chain · allowed models ·
 fail closed · performance telemetry · test suite as a deliverable · **developer persona** (Claude Code / Codex:
 secrets redacted, no slowdown).
 
-## Open conflict
-US-1.1 "overhead < 300 ms p95" vs Jev measured at 2–4.5 s per call. Proposal: p95 < 300 ms for the
-rule-based path; the AI check only on new untrusted content, cached; or a fast local classifier in front.
+## Open conflict: the 300 ms in US-1.1
+US-1.1 "overhead < 300 ms p95" vs Jev. Measured 15:40 (curl breakdown, venue wifi):
+- Jev total 0.59–0.77 s on a new connection: DNS 0.26–0.41 s (slow venue DNS), TCP+TLS ~0.3 s, server work ~0.3–0.4 s.
+- An invalid request (no model work) takes 0.34 s, and the Cloudflare baseline 0.24 s, so the venue network costs ~0.1–0.2 s per round trip.
+- The 2–4.5 s seen at 14:45 was not reproduced; probably a load spike at TypeSafe or on the wifi.
+- With the reused connection (in code since 15:00) expect ~0.3–0.45 s per Jev call; still above 300 ms p95.
+Proposal: the target applies to the rule-based path (single-digit ms); report AI-check latency separately
+(`/api/metrics` → `per_control_avg`); run it only on new untrusted content and cache it; a local classifier first if we must hit 300 ms.
 
 ## If time
 US-7.4 approvals (D2) · US-2.2 privilege + US-2.5 HR via one Jev `choice` question in the same call ·
