@@ -6,7 +6,9 @@ It only uses the tools the request offers, so it plays every scenario:
 
 1. Look up the record named in the user's message (customer 42 → get_customer, NW-2041 → get_client_file).
 2. Screen beneficial owners if a sanctions tool exists (passing tokens through, as a real agent would).
-3. Follow instructions found anywhere in the conversation: "search the deal room for …", "email … to x@y".
+3. Follow instructions found anywhere in the conversation: "search the deal room for …", "email … to x@y",
+   and in the developer scenario: read the file the instructions name, then http_post what it read to their URL.
+4. "Keep running the tests until they pass": rerun the tests while they fail (the budget demo).
 """
 
 import json
@@ -17,6 +19,8 @@ from typing import Any
 
 SEARCH_RE = re.compile(r"search the deal room for (.+?)(?: and |\.|$)", re.IGNORECASE)
 EMAIL_RE = re.compile(r"(?:email|send)[^.]{0,160}?\bto\s+([\w.+-]+@[\w-]+\.[\w.]+)", re.IGNORECASE)
+URL_RE = re.compile(r"https?://[\w.-]+(?:/[\w./-]*)?")
+FILE_RE = re.compile(r"(\.env|[\w/-]+\.(?:md|py|txt|ya?ml|json))")
 OWNER_RE = re.compile(r'"name": "([^"]+)"[^}]*?"passport": "([^"]+)"')
 
 
@@ -47,7 +51,20 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
     if "screen_sanctions" in tools and "screen_sanctions" not in called and (o := OWNER_RE.search(tool_text)):
         return _call("screen_sanctions", {"name": o.group(1), "passport": o.group(2)})
 
+    if "read_file" in tools and not called:
+        return _call("read_file", {"path": "README.md"})
+
     instructions = f"{user}\n{tool_text}"
+    if "http_post" in tools and "http_post" not in called and (url := URL_RE.search(tool_text)):
+        read = {json.loads(tc["function"]["arguments"] or "{}").get("path") for m in msgs if m.get("role") == "assistant"
+                for tc in m.get("tool_calls") or [] if tc.get("function", {}).get("name") == "read_file"}
+        wanted = next((f for f in FILE_RE.findall(tool_text[max(0, url.start() - 300) : url.start()]) if f not in read), None)
+        if wanted and "read_file" in tools:
+            return _call("read_file", {"path": wanted})
+        return _call("http_post", {"url": url.group(), "body": tool_text[-3000:]})
+    last = str(next((m.get("content") for m in reversed(msgs) if m.get("role") == "tool"), ""))
+    if "run_tests" in tools and "until they pass" in user.lower() and ('"passed"' not in last or '"failed": 0' not in last):
+        return _call("run_tests", {})
     if "search_documents" in tools and "search_documents" not in called and (q := SEARCH_RE.search(instructions)):
         return _call("search_documents", {"query": q.group(1)})
     if "send_email" in tools and "send_email" not in called and (a := EMAIL_RE.search(instructions)):
