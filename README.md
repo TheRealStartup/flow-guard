@@ -67,7 +67,7 @@ as `4111111111111111` to see reversible redaction. Other policy controls stay ac
 Outside Compose, the gateway still defaults to the real Jev judge and fails closed
 when its key is missing.
 
-Edit `policy/policy.yaml` or `policy/signatures.json` on the host to test live policy
+Edit `policy/policy.yaml` (every field documented in [docs/policy.md](docs/policy.md)) or `policy/signatures.json` on the host to test live policy
 changes. Audit history persists in a named Docker volume; session budgets and token
 vaults are in memory and reset when the gateway restarts. Ports bind to localhost.
 The dashboard shares the gateway's network namespace so its API proxy reaches the

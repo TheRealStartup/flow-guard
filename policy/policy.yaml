@@ -1,6 +1,6 @@
 # AI Control Layer: the single source of truth for every control.
 # Re-read automatically when this file changes; no restart needed. Every audit entry
-# records `version` + a hash of this file, so you can see which policy made a decision.
+# records `version` + a hash of this file, so you can see which policy made a decision. Documented in docs/policy.md.
 version: "0.2"
 
 # strict | balanced | permissive. Profiles override the controls below (see `profiles`).
@@ -34,7 +34,7 @@ controls:
   injection.jev:
     action: redact    # redact = quarantine the suspicious message; block = stop the whole request
     threshold: 0.80   # Jev's probability that the text tries to instruct the agent
-    timeout_s: 8       # Jev measured at 2–4.5 s on Sat afternoon (advertised 70–500 ms)
+    timeout_s: 8       # Jev answers in 0.6–0.8 s (measured Sat night; 2–4.5 s earlier that day)
     on_error: block
     max_class: internal  # Jev is an external service (api.typesafe.ai): it never receives P2/DP30 (see classification)
   spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
