@@ -10,7 +10,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 TOKEN_RE = re.compile(r"\[\[([A-Z]+)#([0-9a-f]{6})[^\]]*\]\]")
 _TOKEN_KEY = os.urandom(16)
@@ -61,6 +61,7 @@ class AuditLog:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
         self.events: list[dict[str, Any]] = []
         self._prev = "0" * 64
         if path.exists():
@@ -83,7 +84,26 @@ class AuditLog:
                 f.write(json.dumps(entry, default=str) + "\n")
             self.events.append(entry)
             self._prev = entry["hash"]
+            # Under the lock, so every listener sees entries in seq order. Listeners must not block (see stream.py).
+            for fn in self._listeners:
+                fn(entry)
             return entry
+
+    def subscribe(self, fn: Callable[[dict[str, Any]], None], after: int | None = None) -> list[dict[str, Any]]:
+        """Call `fn` with every entry appended from now on. Returns the entries after seq `after` (none if None).
+        Both happen under the lock, so backlog + live entries have no gap and no duplicate."""
+        with self._lock:
+            self._listeners.append(fn)
+            return [] if after is None else self.events[max(after + 1, 0):]
+
+    def unsubscribe(self, fn: Callable[[dict[str, Any]], None]) -> None:
+        with self._lock:
+            if fn in self._listeners:
+                self._listeners.remove(fn)
+
+    @property
+    def subscribers(self) -> int:
+        return len(self._listeners)
 
     def verify(self) -> dict[str, Any]:
         prev = "0" * 64

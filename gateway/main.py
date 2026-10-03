@@ -4,13 +4,15 @@ Run: `just gateway` (port 8000). Agents use base_url http://localhost:8000/v1.
 Interactive API docs for the dashboard: http://localhost:8000/docs
 """
 
+import asyncio
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from acl import tryit
@@ -21,6 +23,7 @@ from acl.detectors.demo import DemoJudge
 from acl.engine import Engine
 from acl.policy import PolicyStore
 from acl.state import AuditLog
+from acl.stream import audit_stream
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,6 +62,26 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         p = policies.get()
         return {"version": p.version, "profile": p.profile, "controls": p.controls, "error": policies.last_error,
                 "signatures": [s.id for s in p.signatures], "last_change": policies.history[-1] if policies.history else None}
+
+    last_poll = [0.0]
+
+    async def poll_policy():
+        """At most once a second across all open streams; get() reloads the files if their mtime changed."""
+        if time.monotonic() - last_poll[0] >= 1.0:
+            last_poll[0] = time.monotonic()
+            await asyncio.to_thread(policies.get)
+
+    @app.get("/api/stream")
+    async def stream(request: Request, since: int | None = None, last_event_id: str | None = Header(None)):
+        """Server-Sent Events: each new audit entry as `event: audit` (id = seq, data = the same JSON as an
+        /api/events item), plus `event: policy` (the /api/policy payload) after a reload. `since=<seq>` or the
+        Last-Event-ID header (sent by EventSource on reconnect, and preferred) replays the entries after that seq."""
+        after = int(last_event_id) if last_event_id and last_event_id.strip().lstrip("-").isdigit() else since
+        return StreamingResponse(
+            audit_stream(engine.audit, after, request.is_disconnected, policy, poll_policy),
+            media_type="text/event-stream",
+            # no-transform + X-Accel-Buffering: ask proxies (Next.js rewrites, nginx) not to buffer or compress.
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
     @app.get("/api/policy/history")
     def policy_history():

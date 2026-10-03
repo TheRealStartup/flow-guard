@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, History, Info, ListTree, Lock, Play, RotateCcw, ShieldCheck, User, X } from "lucide-react";
-import { getJSON, usePoll, type Policy, type PolicyHistoryItem, type TryResult } from "@/lib/api";
+import { getJSON, type Policy, type PolicyHistoryItem, type TryResult } from "@/lib/api";
+import { usePolicyLive } from "@/lib/stream";
 import { CONTROLS, controlName, utcTime } from "@/lib/format";
 import { ActionPill, Btn, Field, PageHeader, Panel, PanelHeader, Pill, SectionLabel, Select, Stat, StatRow, TEXT } from "@/components/kit";
 import { cn } from "@/lib/utils";
@@ -19,8 +20,8 @@ export default function DemoPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ run: TryResult; a: Analysis; ms: number } | null>(null);
 
-  const { data: policy } = usePoll<Policy>("/api/policy", 3000);
-  const { data: history } = usePoll<PolicyHistoryItem[]>("/api/policy/history", 3000);
+  // Refreshed when a policy change streams in; polls every 3 s only while the stream is down.
+  const { policy, history } = usePolicyLive();
 
   const pick = (id: string) => {
     const ex = EXAMPLES.find((e) => e.id === id);
