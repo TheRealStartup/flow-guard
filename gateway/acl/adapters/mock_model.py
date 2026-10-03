@@ -54,6 +54,11 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
     if "read_file" in tools and not called:
         return _call("read_file", {"path": "README.md"})
 
+    # An explicit "keep running the tests until they pass" from the user wins: that is the budget demo.
+    last = str(next((m.get("content") for m in reversed(msgs) if m.get("role") == "tool"), ""))
+    if "run_tests" in tools and "until they pass" in user.lower() and ('"passed"' not in last or '"failed": 0' not in last):
+        return _call("run_tests", {})
+
     instructions = f"{user}\n{tool_text}"
     if "http_post" in tools and "http_post" not in called and (url := URL_RE.search(tool_text)):
         read = {json.loads(tc["function"]["arguments"] or "{}").get("path") for m in msgs if m.get("role") == "assistant"
@@ -62,9 +67,6 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
         if wanted and "read_file" in tools:
             return _call("read_file", {"path": wanted})
         return _call("http_post", {"url": url.group(), "body": tool_text[-3000:]})
-    last = str(next((m.get("content") for m in reversed(msgs) if m.get("role") == "tool"), ""))
-    if "run_tests" in tools and "until they pass" in user.lower() and ('"passed"' not in last or '"failed": 0' not in last):
-        return _call("run_tests", {})
     if "search_documents" in tools and "search_documents" not in called and (q := SEARCH_RE.search(instructions)):
         return _call("search_documents", {"query": q.group(1)})
     if "send_email" in tools and "send_email" not in called and (a := EMAIL_RE.search(instructions)):
