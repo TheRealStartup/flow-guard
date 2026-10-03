@@ -16,6 +16,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..engine import Engine
+from ..identity import Denied, resolve
 from .mock_model import compromised_model
 
 Upstream = Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -66,34 +67,14 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
             raise HTTPException(400, "streaming is not supported yet by the AI Control Layer (MVP); send stream=false")
 
         # --- identity (US-1.2): who is the agent, and for which human? ---
-        p = engine.policies.get()
-        cfg = p.identity
-
-        def deny(status: int, reason: str, user=None, agent=None):
-            entry = engine.deny(reason, user=user, agent=agent, purpose=x_purpose, sid=x_session)
-            return JSONResponse({"error": {"type": "acl_denied", "message": reason}, "acl": {"seq": entry["seq"], "outcome": "blocked"}},
-                                status_code=status, headers={"X-ACL-Outcome": "blocked"})
-
-        if cfg["mode"] == "api_key":
-            key = authorization.removeprefix("Bearer ").strip() if authorization else None
-            ident = p.identify(key)
-            if ident is None:
-                return deny(401, "no valid API key: every request must identify its user and agent", user=x_user)
-            if x_user and x_user != ident["user"]:
-                return deny(403, f"key belongs to {ident['user']!r}, not {x_user!r}: an agent cannot act for someone else",
-                            user=ident["user"], agent=ident["agent"])
-            user, agent = ident["user"], ident["agent"]
-        else:  # header mode: local development only
-            if not x_user:
-                return deny(401, "no user identity (X-User): requests without a user are denied")
-            user, agent = x_user, "unverified-agent"
-        if cfg.get("require_purpose") and not x_purpose:
-            return deny(400, "no purpose given (X-Purpose header)", user=user, agent=agent)
-
-        sid = x_session or f"{user}-{uuid.uuid4().hex[:8]}"
-        if sid in engine.sessions and engine.sessions[sid].user != user:
-            return deny(403, f"session {sid!r} belongs to another user", user=user, agent=agent)
-        body, ex = await engine.check_request(body, user, sid, agent, x_purpose)
+        key = authorization.removeprefix("Bearer ").strip() if authorization else None
+        who = resolve(engine, key=key, x_user=x_user, x_purpose=x_purpose, x_session=x_session)
+        if isinstance(who, Denied):
+            entry = engine.deny(who.reason, user=who.user, agent=who.agent, purpose=x_purpose, sid=x_session)
+            return JSONResponse({"error": {"type": "acl_denied", "message": who.reason}, "acl": {"seq": entry["seq"], "outcome": "blocked"}},
+                                status_code=who.status, headers={"X-ACL-Outcome": "blocked"})
+        user, agent, sid = who.user, who.agent, who.sid
+        body, ex = await engine.check_request(body, user, sid, agent, who.purpose)
 
         upstream_ms = None
         if ex.blocked:

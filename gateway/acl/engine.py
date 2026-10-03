@@ -216,7 +216,7 @@ class Engine:
         return n
 
     def _over_budget(self, p: Policy, s: Session) -> str | None:
-        b = p.session_budget
+        b = p.budget_for(s.user)
         for key, used in (("max_tokens", s.tokens), ("max_cost_usd", s.cost_usd), ("max_compute_seconds", s.compute_s)):
             if key in b and used >= b[key]:
                 return f"session budget exhausted: {key}={b[key]} (used {round(used, 4)})"
@@ -268,7 +268,7 @@ class Engine:
                 continue
             for get, set_ in list(_text_parts(msg)):
                 text, ds0 = self._barrier(p, s, get(), where) if where in ("tool_result", "prompt") else (get(), [])
-                text, ds = self._signatures(p, text, where)
+                text, ds = self._signatures(p, text, where) if msg.get("role") != "system" else (text, [])
                 text, ds2 = self._redact(p, s, text, where)
                 ds = ds0 + ds + self._breakout(p, text, where)
                 set_(text)
@@ -378,7 +378,7 @@ class Engine:
                 name, args = fn.get("name", "?"), fn.get("arguments", "") or ""
                 where = f"tool_call:{name}"
                 ds: list[Decision] = []
-                if p.action("access.tools") != "allow" and name not in p.allowed_tools(s.user):
+                if p.action("access.tools") != "allow" and not p.may_call(s.user, name):
                     ds.append(Decision("access.tools", p.action("access.tools"), where, f"role {p.role_of(s.user)!r} may not call {name}"))
                 ds += self._signatures(p, args, "tool_args")[1]
                 ds = [Decision(d.control, d.action, where, d.reason) for d in ds]
@@ -400,7 +400,7 @@ class Engine:
                         what = sorted(carried) if carried else sorted(s.labels)
                         ds.append(Decision("flow.sensitive_to_external", p.action("flow.sensitive_to_external"), where,
                                            f"{'/'.join(what)} data would leave the organisation via {name} (mode={mode})"))
-                budget = p.session_budget.get("max_tool_calls")
+                budget = p.budget_for(s.user).get("max_tool_calls")
                 if budget is not None and s.tool_calls + 1 > budget and p.action("budget") != "allow":
                     ds.append(Decision("budget", p.action("budget"), where, f"tool-call budget {budget} exhausted"))
                 ex.decisions += _with_excerpt(ds, f"{name}({args})")

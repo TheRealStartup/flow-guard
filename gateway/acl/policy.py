@@ -93,6 +93,15 @@ class Policy:
         roles = self.raw.get("roles", {})
         return roles.get(self.role_of(user), roles.get("default", {})).get("tools", [])
 
+    def may_call(self, user: str, tool: str) -> bool:
+        tools = self.allowed_tools(user)
+        return "*" in tools or tool in tools  # "*": e.g. a coding agent with its own tools; all other controls still apply
+
+    def budget_for(self, user: str) -> dict[str, float]:
+        """The session budget, with the role's own limits on top (a coding agent sends ~20k tokens per request)."""
+        role = self.raw.get("roles", {}).get(self.role_of(user), {})
+        return {**self.session_budget, **role.get("budget", {})}
+
     def sinks(self, kind: str) -> list[str]:
         return self.raw.get("sinks", {}).get(kind, [])
 
@@ -124,7 +133,8 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
 
     idents: dict[str, dict[str, str]] = {}
     for i in (yaml.safe_load(keys_text) or {}).get("identities", []) if keys_text else []:
-        idents[str(i["key_sha256"]).lower()] = {"user": str(i["user"]), "agent": str(i.get("agent", "unknown-agent"))}
+        idents[str(i["key_sha256"]).lower()] = {"user": str(i["user"]), "agent": str(i.get("agent", "unknown-agent")),
+                                                **({"purpose": str(i["purpose"])} if i.get("purpose") else {})}
 
     digest = hashlib.sha256(text.encode() + (sig_text or "").encode() + (keys_text or "").encode()).hexdigest()[:8]
     return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents)
