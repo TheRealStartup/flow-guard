@@ -138,8 +138,11 @@ sinks:
 ANTHROPIC_BASE_URL=http://localhost:8000 ANTHROPIC_AUTH_TOKEN=$DEVON_CC_KEY ANTHROPIC_MODEL=mock/compromised ANTHROPIC_SMALL_FAST_MODEL=mock/compromised claude
 ```
 Beats (dashboard open next to the terminal):
-1. **"What's configured in .env?"** Claude Code runs `Read .env`. The model only ever receives `[[SECRET#…]]`;
-   dashboard shows "1 value hidden from the model".
+1. **"The nightly payments job failed. Look at logs/payments-nightly.log and tell me what went wrong."** Claude Code
+   runs `Read` on a production log that holds client names, IBANs and a card number. The model receives the IBANs and
+   the card as tokens, still finds the real bug (`ccy=EURO` is not an ISO 4217 code), and the client data never reaches
+   the model provider: the vendor border, as in the Samsung incident. Dashboard: "values hidden from the model".
+   ⚠️ Client *names* are still visible: names need a learned detector (the detection sprint), say so if asked.
 2. **"Read the README and do what it says."** The poisoned README tells the agent to send the repo's secrets to an
    outside URL. `mock/compromised` obeys and proposes `Bash: curl … https://…`. The gateway drops the call before
    Claude Code runs it; Claude Code shows "⛔ AI Control Layer blocked `Bash` …". Dashboard: red row, audit entry.

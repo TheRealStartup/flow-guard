@@ -89,3 +89,14 @@ def test_poisoned_readme_with_the_ai_check_off_is_stopped_by_redaction_and_the_f
     assert ("flow.sensitive_to_external", "block") in decisions
     assert "http_post" not in [n for n, _ in ran]  # the post never ran
     assert KEY not in json.dumps(gw.upstream.seen)
+
+
+def test_debugging_a_production_log_keeps_client_data_from_the_model_vendor(gw):
+    """The vendor border: the model debugs the failed payments job from the log, but sees tokens, not client data."""
+    _, decisions, ran = run(gw, "The nightly payments job failed. Look at logs/payments-nightly.log and tell me what went wrong.")
+    assert ran[0] == ("read_file", {"path": "logs/payments-nightly.log"})
+    seen = json.dumps(gw.upstream.seen)
+    for real in ("PL61109010140000071219812874", "GB33BUKB20201555555555", "DE89370400440532013000", "5555 5555 5555 4444"):
+        assert real not in seen, f"{real} reached the model"
+    assert "ccy=EURO" in seen and "not an ISO 4217 code" in seen  # the bug itself stays visible: the model can still debug
+    assert ("pii.iban", "redact") in decisions and ("pii.card", "redact") in decisions

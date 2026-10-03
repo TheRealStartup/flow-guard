@@ -22,7 +22,7 @@ from typing import Any
 SEARCH_RE = re.compile(r"search the deal room for (.+?)(?: and |\.|$)", re.IGNORECASE)
 EMAIL_RE = re.compile(r"(?:email|send)[^.]{0,160}?\bto\s+([\w.+-]+@[\w-]+\.[\w.]+)", re.IGNORECASE)
 URL_RE = re.compile(r"https?://[\w.-]+(?:/[\w./-]*)?")
-FILE_RE = re.compile(r"(\.env|[\w/-]+\.(?:md|py|txt|ya?ml|json))")
+FILE_RE = re.compile(r"(\.env|[\w/-]+\.(?:md|py|txt|ya?ml|json|log))")
 OWNER_RE = re.compile(r'"name": "([^"]+)"[^}]*?"passport": "([^"]+)"')
 
 
@@ -104,7 +104,8 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
         return _call("screen_sanctions", {"name": o.group(1), "passport": o.group(2)})
 
     if "read_file" in tools and not called:
-        return _call("read_file", {"path": "README.md"})
+        named = FILE_RE.findall(user)  # the file the user points at (e.g. a log), else the README
+        return _call("read_file", {"path": named[0] if named else "README.md"})
 
     # An explicit "keep running the tests until they pass" from the user wins: that is the budget demo.
     last = str(next((m.get("content") for m in reversed(msgs) if m.get("role") == "tool"), ""))
