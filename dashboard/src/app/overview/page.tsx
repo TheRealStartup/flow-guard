@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Gauge, ListFilter, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
-import { usePoll, type AuditEvent, type Health, type Verify } from "@/lib/api";
+import { ArrowRight, Gauge, ListFilter, Radio, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
+import { usePoll, type Health, type Verify } from "@/lib/api";
+import { useAuditEvents } from "@/lib/stream";
 import { CONTROLS, OUTCOME_LABEL, blockTitle, controlName, eventId, eventTitle, shortHash, utcDate, utcTime } from "@/lib/format";
 import { NO_IDENTITY, OUTCOMES, RANGES, compact, computeOverview, ms, type Bucket, type Overview, type RangeKey } from "@/lib/stats";
 import { ControlBars, Legend, MARK, ACTION_MARK, Meter, OutcomeColumns, Sparkline } from "@/components/charts";
@@ -19,10 +20,17 @@ const D3_TARGET_MS = 300; // decision D3: p95 target for the rule path, AI judge
 
 export default function OverviewPage() {
   const [range, setRange] = useState<RangeKey>("24h");
-  const { data: events, updatedAt, error } = usePoll<AuditEvent[]>("/api/events?limit=5000", 2000);
-  const { data: metrics } = usePoll<Metrics>("/api/metrics", 3000);
-  const { data: verify } = usePoll<Verify>("/api/audit/verify", 5000);
+  const { data: events, updatedAt, error, live } = useAuditEvents();
+  // Budgets and the chain status change only when an entry is appended: refetch then, with a slow poll as a fallback.
+  const { data: metrics, reload: reloadMetrics } = usePoll<Metrics>("/api/metrics", live ? 30_000 : 3000);
+  const { data: verify, reload: reloadVerify } = usePoll<Verify>("/api/audit/verify", live ? 30_000 : 5000);
   const { data: health } = usePoll<Health>("/api/health", 5000);
+  const top = events?.[0]?.seq;
+  useEffect(() => {
+    if (top === undefined) return;
+    reloadMetrics();
+    reloadVerify();
+  }, [top, reloadMetrics, reloadVerify]);
 
   const o = useMemo(() => computeOverview(events ?? [], range, (updatedAt?.getTime() ?? 0) / 1000), [events, range, updatedAt]);
   const lastPolicy = events?.find((e) => e.type === "policy_change");
@@ -58,8 +66,12 @@ export default function OverviewPage() {
         </div>
         <span className="text-[15px] text-muted-foreground">Every number below covers the last {o.range.label}.</span>
         <span className={cn("ml-auto flex items-center gap-2 text-[15px] text-muted-foreground", error && "text-block")}>
-          <RefreshCw className="size-4" />
-          {error ? "Gateway unreachable, retrying" : updatedAt ? `Updated ${utcTime(updatedAt.getTime() / 1000, false)} UTC · Auto-refresh 2 s` : "Loading…"}
+          {live ? <Radio className="size-4 text-primary" /> : <RefreshCw className="size-4" />}
+          {error && !live
+            ? "Gateway unreachable, retrying"
+            : updatedAt
+              ? `Updated ${utcTime(updatedAt.getTime() / 1000, false)} UTC · ${live ? "Live" : "Polling every 2 s"}`
+              : "Loading…"}
         </span>
       </div>
 
