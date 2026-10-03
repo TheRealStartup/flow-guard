@@ -32,6 +32,7 @@ class Decision:
     reason: str
     ms: float = 0.0
     score: float | None = None
+    excerpt: str | None = None  # the text that triggered it, always masked; see safe_excerpt()
 
 
 @dataclass
@@ -60,6 +61,26 @@ def _text_parts(msg: dict[str, Any]):
         yield (lambda f=fn: f.get("arguments", "")), (lambda v, f=fn: f.__setitem__("arguments", v))
 
 
+def safe_excerpt(text: str, focus: str | None = None, width: int = 180) -> str:
+    """A short piece of the triggering text for the audit log and dashboard. Any card, IBAN,
+    PESEL or secret still in it is masked as [CARD] etc., so the log never stores real values."""
+    for sp in reversed(find_sensitive(text)):
+        text = text[: sp.start] + f"[{sp.kind}]" + text[sp.end :]
+    text = " ".join(text.split())
+    i = text.find(focus) if focus else -1
+    start = max(0, i - width // 3) if i >= 0 else 0
+    cut = text[start : start + width]
+    return ("…" if start > 0 else "") + cut + ("…" if start + width < len(text) else "")
+
+
+def _with_excerpt(ds: list[Decision], text: str) -> list[Decision]:
+    for d in ds:
+        if d.excerpt is None:
+            focus = "[[" if d.control.startswith(("pii.", "secrets")) and d.action == "redact" else None
+            d.excerpt = safe_excerpt(text, focus)
+    return ds
+
+
 WHERE = {"user": "prompt", "system": "prompt", "developer": "prompt", "tool": "tool_result", "assistant": "assistant"}
 
 
@@ -81,7 +102,7 @@ class Engine:
         """Record a request refused before any control ran (no or bad identity, session hijack)."""
         p = self.policies.get()
         return self.audit.append({
-            "session": sid, "user": user, "agent": agent, "purpose": purpose,
+            "type": "exchange", "session": sid, "user": user, "agent": agent, "purpose": purpose,
             "role": p.role_of(user) if user else None, "model": None,
             "profile": p.profile, "policy_version": p.version, "outcome": "blocked",
             "decisions": [asdict(Decision("identity", "block", "request", reason))],
@@ -151,6 +172,7 @@ class Engine:
             fn = tool.get("function", {})
             desc = f"{fn.get('name', '')}: {fn.get('description', '')} {json.dumps(fn.get('parameters', {}))}"
             _, ds = self._signatures(p, desc, f"tool_description:{fn.get('name', '?')}")
+            _with_excerpt(ds, desc)
             if any(d.action == "block" for d in ds):
                 return stop(next(d for d in ds if d.action == "block"))
             ex.decisions += ds
@@ -168,6 +190,7 @@ class Engine:
                 text, ds = self._signatures(p, get(), where)
                 text, ds2 = self._redact(p, s, text, where)
                 set_(text)
+                _with_excerpt(ds + ds2, text)
                 if new:
                     ex.decisions += ds + ds2
                 blocked = next((d for d in ds + ds2 if d.action == "block"), None)
@@ -192,6 +215,7 @@ class Engine:
             text = "\n".join(get() for get, _ in _text_parts(msg))
             if not text.strip():
                 return None
+            excerpt = safe_excerpt(text)
             t = time.perf_counter()
             try:
                 if self.judge is None:
@@ -200,12 +224,12 @@ class Engine:
             except Exception as e:  # noqa: BLE001 - any failure of the AI check goes through on_error
                 ms = (time.perf_counter() - t) * 1000
                 act = p.on_error("injection.jev")
-                return Decision("injection.jev", "block" if act == "block" else "flag", where, f"check failed ({type(e).__name__}: {e}); on_error={act}", ms)
+                return Decision("injection.jev", "block" if act == "block" else "flag", where, f"check failed ({type(e).__name__}: {e}); on_error={act}", ms, excerpt=excerpt)
             ms = (time.perf_counter() - t) * 1000
             what = "jailbreak" if where == "prompt" else "prompt injection"
             if v.injection < threshold:  # recorded too: the score and latency are telemetry
-                return Decision("injection.jev", "allow", where, f"{what} p={v.injection:.2f} < {threshold}", ms, v.injection)
-            d = Decision("injection.jev", c.get("action", "block"), where, f"{what} p={v.injection:.2f} >= {threshold}", ms, v.injection)
+                return Decision("injection.jev", "allow", where, f"{what} p={v.injection:.2f} < {threshold}", ms, v.injection, excerpt)
+            d = Decision("injection.jev", c.get("action", "block"), where, f"{what} p={v.injection:.2f} >= {threshold}", ms, v.injection, excerpt)
             if d.action == "redact":
                 replacement = QUARANTINE.format(score=v.injection)
                 s.quarantined[h] = replacement
@@ -256,7 +280,7 @@ class Engine:
                 budget = p.session_budget.get("max_tool_calls")
                 if budget is not None and s.tool_calls + 1 > budget and p.action("budget") != "allow":
                     ds.append(Decision("budget", p.action("budget"), where, f"tool-call budget {budget} exhausted"))
-                ex.decisions += ds
+                ex.decisions += _with_excerpt(ds, f"{name}({args})")
                 block = next((d for d in ds if d.action == "block"), None)
                 if block:
                     notes.append(f"⛔ AI Control Layer blocked `{name}`: {block.reason} [{block.control}]")
@@ -264,7 +288,8 @@ class Engine:
                 s.tool_calls += 1
                 if name in p.sinks("detokenize") and TOKEN_RE.search(args):
                     fn["arguments"] = s.detokenize(args)
-                    ex.decisions.append(Decision("pii.detokenize", "flag", where, "real values restored for an allowed tool"))
+                    ex.decisions.append(Decision("pii.detokenize", "flag", where, "real values restored for an allowed tool",
+                                                 excerpt=safe_excerpt(f"{name}({args})")))
                 kept.append(tc)
             if msg.get("tool_calls"):
                 if kept:
@@ -275,7 +300,7 @@ class Engine:
             # The model's own text never carries real values back to the user.
             if isinstance(msg.get("content"), str):
                 msg["content"], ds = self._redact(p, s, msg["content"], "model_output")
-                ex.decisions += ds
+                ex.decisions += _with_excerpt(ds, msg["content"])
             if notes:
                 msg["content"] = "\n".join(filter(None, [msg.get("content") or "", *notes]))
 
@@ -288,6 +313,7 @@ class Engine:
         worst = max((d.action for d in ex.decisions), key=lambda a: SEVERITY[a], default="allow")
         outcome = {"block": "blocked", "redact": "redacted", "flag": "flagged", "allow": "allowed"}[worst]
         return self.audit.append({
+            "type": "exchange",
             "session": ex.session.id,
             "user": ex.session.user,
             "agent": ex.session.agent,
@@ -303,8 +329,46 @@ class Engine:
             "usage": ex.session.usage(),
         })
 
+    def exchanges(self) -> list[dict[str, Any]]:
+        """Audit entries for agent traffic (not policy changes). Entries from before `type` existed count as traffic."""
+        return [e for e in self.audit.events if e.get("type", "exchange") == "exchange"]
+
+    def timeseries(self, minutes: int = 30) -> list[dict[str, Any]]:
+        """Per-minute counts for charts: requests, outcomes, blocks per control, cost spent in that minute."""
+        now = int(time.time() // 60)
+        buckets = {m: {"minute": m * 60, "requests": 0, "blocked": 0, "redacted": 0, "flagged": 0, "allowed": 0,
+                       "blocks_by_control": {}, "cost_usd": 0.0} for m in range(now - minutes + 1, now + 1)}
+        last_cost: dict[str, float] = {}
+        for e in self.exchanges():
+            m = int(e["ts"] // 60)
+            cost = (e.get("usage") or {}).get("cost_usd", 0.0) or 0.0
+            spent = cost - last_cost.get(e.get("session") or "", 0.0)  # usage is cumulative per session
+            last_cost[e.get("session") or ""] = cost
+            b = buckets.get(m)
+            if b is None:
+                continue
+            b["requests"] += 1
+            b[e["outcome"]] = b.get(e["outcome"], 0) + 1
+            b["cost_usd"] = round(b["cost_usd"] + max(spent, 0.0), 6)
+            for d in e["decisions"]:
+                if d["action"] == "block":
+                    b["blocks_by_control"][d["control"]] = b["blocks_by_control"].get(d["control"], 0) + 1
+        return list(buckets.values())
+
+    def session_view(self, sid: str) -> dict[str, Any] | None:
+        steps = [e for e in self.exchanges() if e.get("session") == sid]
+        s = self.sessions.get(sid)
+        if s is None and not steps:
+            return None
+        head = {"session": sid, "user": s.user if s else steps[0].get("user"), "agent": s.agent if s else steps[0].get("agent"),
+                "purpose": s.purpose if s else steps[0].get("purpose")}
+        return {**head, "role": self.policies.get().role_of(head["user"]) if head["user"] else None,
+                "usage": s.usage() if s else (steps[-1].get("usage") or {}),
+                "tokens_issued": len(s.vault) if s else None,
+                "steps": steps}
+
     def metrics(self) -> dict[str, Any]:
-        ev = self.audit.events
+        ev = self.exchanges()
         by_outcome: dict[str, int] = {}
         by_control: dict[str, dict[str, int]] = {}
         per_control_ms: dict[str, list[float]] = {}

@@ -4,6 +4,8 @@ import copy
 import hashlib
 import json
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -99,6 +101,32 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
     return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents)
 
 
+def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
+    """What a reload changed, field by field, in the *effective* controls (after the profile is applied)."""
+    if old is None:
+        return []
+    out: list[dict[str, Any]] = []
+    if old.profile != new.profile:
+        out.append({"what": "active_profile", "old": old.profile, "new": new.profile})
+    for cid in sorted(set(old.controls) | set(new.controls)):
+        a, b = old.controls.get(cid), new.controls.get(cid)
+        if a is None or b is None:
+            out.append({"what": f"controls.{cid}", "old": a, "new": b})
+            continue
+        for k in sorted(set(a) | set(b)):
+            if a.get(k) != b.get(k):
+                out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
+    for key in ("budgets", "models", "users", "roles", "sinks", "identity"):
+        if old.raw.get(key) != new.raw.get(key):
+            out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
+    if [x.id for x in old.signatures] != [x.id for x in new.signatures]:
+        out.append({"what": "signatures", "old": [x.id for x in old.signatures], "new": [x.id for x in new.signatures]})
+    if old.identities.keys() != new.identities.keys():
+        out.append({"what": "identities", "old": sorted(v["user"] for v in old.identities.values()),
+                    "new": sorted(v["user"] for v in new.identities.values())})
+    return out
+
+
 class PolicyStore:
     """Holds the current policy. `get()` re-reads the files when their mtime changes.
 
@@ -106,11 +134,18 @@ class PolicyStore:
     never takes the gateway down (and never silently disables controls).
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, on_change: Callable[[dict[str, Any]], None] | None = None):
         self.path = path
         self._stamp: tuple[float, ...] | None = None
         self._policy: Policy | None = None
         self.last_error: str | None = None
+        self.history: list[dict[str, Any]] = []  # newest last, at most 20: what changed, when, or why a reload failed
+        self.on_change = on_change
+
+    def _record(self, entry: dict[str, Any]) -> None:
+        self.history = [*self.history, {"ts": time.time(), **entry}][-20:]
+        if self.on_change:
+            self.on_change(self.history[-1])
 
     def _side_files(self, raw: dict) -> tuple[Path | None, Path | None]:
         """The signature feed and the identities file, both named in policy.yaml and watched too."""
@@ -133,11 +168,18 @@ class PolicyStore:
             try:
                 text = self.path.read_text()
                 feed, keys = self._side_files(yaml.safe_load(text) or {})
-                self._policy = parse(text, self.path.parent, self._read(feed), self._read(keys))
+                new = parse(text, self.path.parent, self._read(feed), self._read(keys))
+                old, self._policy = self._policy, new
                 self.last_error = None
+                if old is None or old.version != new.version:
+                    self._record({"version": new.version, "previous": old.version if old else None,
+                                  "profile": new.profile, "changes": diff(old, new), "error": None})
             except Exception as e:  # keep the last good policy
                 if self._policy is None:
                     raise
                 self.last_error = f"{type(e).__name__}: {e}"
+                self._record({"version": self._policy.version, "previous": self._policy.version,
+                              "profile": self._policy.profile, "changes": [],
+                              "error": f"{self.last_error} (kept the last good policy)"})
             self._stamp = stamp
         return self._policy

