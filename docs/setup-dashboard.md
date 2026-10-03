@@ -24,4 +24,14 @@ Details for each step are in the README ("Run with Docker Compose").
    because it accepts calls from inside the gateway's container only. Design that view against the Docker dashboard
    on :3000, or use the data from step 5.
 
+## Windows (PowerShell, not CMD)
+- Install WSL 2 + Docker Desktop (README has the commands), then **restart Windows once**. After any install, open a
+  **new** PowerShell window; old windows don't see new commands. Docker Desktop must show "Engine running".
+- Clone over HTTPS (a browser login to GitHub pops up): `git clone https://github.com/TheRealStartup/flow-guard.git`,
+  then `cd flow-guard`. No Git? `winget install --id Git.Git -e`, new window.
+- Keys: `Copy-Item .env.example .env`, then `notepad .env`.
+- Run the commands one per line (Windows PowerShell 5.1 has no `&&`).
+- Hot reload: Node.js via `winget install OpenJS.NodeJS.LTS`, new window, then in `dashboard/`:
+  `npm install`, then `$env:BACKEND_URL="http://127.0.0.1:8000"; npm run dev -- -p 3001`.
+
 Problems: `docker compose logs -f gateway`. Reset the audit data: `docker compose down -v`, then steps 4–5.
