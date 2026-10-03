@@ -70,10 +70,23 @@ class Engine:
         self.judge = judge
         self.sessions: dict[str, Session] = {}
 
-    def session(self, sid: str, user: str) -> Session:
+    def session(self, sid: str, user: str, agent: str = "unknown-agent", purpose: str | None = None) -> Session:
         if sid not in self.sessions:
-            self.sessions[sid] = Session(sid, user)
-        return self.sessions[sid]
+            self.sessions[sid] = Session(sid, user, agent, purpose)
+        s = self.sessions[sid]
+        s.purpose = purpose or s.purpose
+        return s
+
+    def deny(self, reason: str, *, user: str | None, agent: str | None, purpose: str | None, sid: str | None) -> dict[str, Any]:
+        """Record a request refused before any control ran (no or bad identity, session hijack)."""
+        p = self.policies.get()
+        return self.audit.append({
+            "session": sid, "user": user, "agent": agent, "purpose": purpose,
+            "role": p.role_of(user) if user else None, "model": None,
+            "profile": p.profile, "policy_version": p.version, "outcome": "blocked",
+            "decisions": [asdict(Decision("identity", "block", "request", reason))],
+            "controls_ms": 0.0, "upstream_ms": None, "usage": {},
+        })
 
     # ---------- shared checks ----------
 
@@ -110,10 +123,11 @@ class Engine:
 
     # ---------- request side ----------
 
-    async def check_request(self, body: dict[str, Any], user: str, sid: str) -> tuple[dict[str, Any], Exchange]:
+    async def check_request(self, body: dict[str, Any], user: str, sid: str, agent: str = "unknown-agent",
+                            purpose: str | None = None) -> tuple[dict[str, Any], Exchange]:
         t0 = time.perf_counter()
         p = self.policies.get()
-        s = self.session(sid, user)
+        s = self.session(sid, user, agent, purpose)
         model = body.get("model", "")
         ex = Exchange(s, p, model, [])
         body = copy.deepcopy(body)
@@ -183,7 +197,7 @@ class Engine:
                 if self.judge is None:
                     raise RuntimeError("no semantic judge configured")
                 v = await asyncio.wait_for(self.judge.judge(text, where, timeout), timeout)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any failure of the AI check goes through on_error
                 ms = (time.perf_counter() - t) * 1000
                 act = p.on_error("injection.jev")
                 return Decision("injection.jev", "block" if act == "block" else "flag", where, f"check failed ({type(e).__name__}: {e}); on_error={act}", ms)
@@ -276,6 +290,8 @@ class Engine:
         return self.audit.append({
             "session": ex.session.id,
             "user": ex.session.user,
+            "agent": ex.session.agent,
+            "purpose": ex.session.purpose,
             "role": ex.policy.role_of(ex.session.user),
             "model": ex.model,
             "profile": ex.policy.profile,

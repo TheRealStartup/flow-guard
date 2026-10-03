@@ -102,12 +102,6 @@
   reply: {tool_call: {name: charge_card, arguments: {card_number: "x", amount_pln: 10}}}
   expect: {outcome: blocked, tool_call_kept: false, decisions: [{control: access.tools, action: block}]}
 
-- name: unknown user gets the default role with no tools
-  user: mallory
-  prompt: Look up customer 42
-  reply: {tool_call: {name: get_customer, arguments: {customer_id: 42}}}
-  expect: {outcome: blocked, tool_call_kept: false}
-
 - name: model outside the allowlist is refused
   user: alice
   model: openai/gpt-5.6-terra

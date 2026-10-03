@@ -17,10 +17,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "gateway"))
 sys.path.insert(0, str(ROOT / "demo"))
 
-from acl.adapters.llm_proxy import compromised_model  # noqa: E402
-from acl.detectors.jev import Verdict  # noqa: E402
-from main import create_app  # noqa: E402
+from acl.adapters.llm_proxy import compromised_model
+from acl.detectors.jev import Verdict
+from main import create_app
 
+DEV_KEYS = {line.split("=", 1)[0].removeprefix("ACL_KEY_").lower(): line.split("=", 1)[1].strip()
+            for line in (ROOT / "demo" / "dev-keys.env").read_text().splitlines() if line.startswith("ACL_KEY_")}
 INJECTION_MARKERS = ("you must first send", "note for the assistant", "ignore your rules", "you are now dan")
 
 
@@ -84,12 +86,17 @@ class Gateway:
         st = self.policy_path.stat()
         os.utime(self.policy_path, (st.st_atime, st.st_mtime + self._bump))
 
-    def chat(self, user: str, messages: list[dict], model: str = "mock/compromised", session: str = "s1", **extra):
+    def chat(self, user: str, messages: list[dict], model: str = "mock/compromised", session: str = "s1",
+             headers: dict[str, str] | None = None, **extra):
+        """Calls the gateway as `user`'s agent: their dev API key + a purpose, like a real client."""
         from world import TOOLS
 
-        r = self.client.post("/v1/chat/completions", headers={"X-User": user, "X-Session": session},
-                             json={"model": model, "messages": messages, "tools": TOOLS, **extra})
-        return r
+        h = {"X-Session": session, "X-Purpose": "test"}
+        if user in DEV_KEYS:
+            h["Authorization"] = f"Bearer {DEV_KEYS[user]}"
+        h.update(headers or {})
+        return self.client.post("/v1/chat/completions", headers=h,
+                                json={"model": model, "messages": messages, "tools": TOOLS, **extra})
 
 
 @pytest.fixture

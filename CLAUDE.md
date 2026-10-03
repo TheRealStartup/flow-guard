@@ -19,7 +19,9 @@ Bank support agent acting on behalf of a user. One Python policy engine, thin ad
 - Hash-chained JSONL audit log (every entry has the policy version), `/metrics`, SSE events → dashboard.
 - Tests: pytest, cases as YAML in `tests/cases/` (input, user, expected decision).
 
-Session identity across adapters: `X-Session` / `X-User` headers. Decide nothing that breaks this.
+Identity (US-1.2, Sat 18:40): every request presents an API key (`Authorization: Bearer`) mapped to one (user, agent)
+in `policy/identities.yaml` (SHA-256 only); `X-Purpose` required; `X-Session` groups a conversation. Dev keys for the demo
+are in `demo/dev-keys.env` (test values). `just new-key <user> <agent>` makes a new one. `identity.mode: header` is dev-only.
 
 ## Layout
 `gateway/` Python (uv) · `dashboard/` Next.js + shadcn · `policy/` policy.yaml + signature feed ·
@@ -32,7 +34,7 @@ Session identity across adapters: `X-Session` / `X-User` headers. Decide nothing
 Working: model proxy (`/v1/chat/completions`), policy live reload + profiles, card/IBAN/PESEL/secret
 redaction as reversible tokens, Jev injection/jailbreak check (fail closed on error), role → tools,
 data-flow block to external sinks, budgets (tokens/$/compute/tool calls), signature feed, hash-chained
-audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 44 tests, ~2 s, no network.
+audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 51 tests, ~3 s, no network.
 `mock/compromised` is a scripted model that obeys injections, for the demo and the tests.
 Not yet: dashboard page, architecture diagram, approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.

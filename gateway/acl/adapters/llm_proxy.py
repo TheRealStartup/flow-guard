@@ -43,7 +43,7 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
         tc = {"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function", "function": {"name": name, "arguments": _json.dumps(args)}}
         return completion({"role": "assistant", "content": None, "tool_calls": [tc]}, "tool_calls")
 
-    if not tool_msgs and (m := _re.search(r"customer\s+(\d+)", str(user), _re.I)):
+    if not tool_msgs and (m := _re.search(r"customer\s+(\d+)", str(user), _re.IGNORECASE)):
         return call("get_customer", {"customer_id": int(m.group(1))})
     last = str(tool_msgs[-1].get("content", "")) if tool_msgs else ""
     already_sent = any("send_email" in _json.dumps(m.get("tool_calls") or []) for m in msgs if m.get("role") == "assistant")
@@ -88,13 +88,43 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
     @r.post("/v1/chat/completions")
     async def chat_completions(
         body: dict[str, Any],
-        x_user: str = Header(default="anonymous"),
+        authorization: str | None = Header(default=None),
+        x_user: str | None = Header(default=None),
         x_session: str | None = Header(default=None),
+        x_purpose: str | None = Header(default=None),
     ):
         if body.get("stream"):
             raise HTTPException(400, "streaming is not supported yet by the AI Control Layer (MVP); send stream=false")
-        sid = x_session or f"{x_user}-{uuid.uuid4().hex[:8]}"
-        body, ex = await engine.check_request(body, x_user, sid)
+
+        # --- identity (US-1.2): who is the agent, and for which human? ---
+        p = engine.policies.get()
+        cfg = p.identity
+
+        def deny(status: int, reason: str, user=None, agent=None):
+            entry = engine.deny(reason, user=user, agent=agent, purpose=x_purpose, sid=x_session)
+            return JSONResponse({"error": {"type": "acl_denied", "message": reason}, "acl": {"seq": entry["seq"], "outcome": "blocked"}},
+                                status_code=status, headers={"X-ACL-Outcome": "blocked"})
+
+        if cfg["mode"] == "api_key":
+            key = authorization.removeprefix("Bearer ").strip() if authorization else None
+            ident = p.identify(key)
+            if ident is None:
+                return deny(401, "no valid API key: every request must identify its user and agent", user=x_user)
+            if x_user and x_user != ident["user"]:
+                return deny(403, f"key belongs to {ident['user']!r}, not {x_user!r}: an agent cannot act for someone else",
+                            user=ident["user"], agent=ident["agent"])
+            user, agent = ident["user"], ident["agent"]
+        else:  # header mode: local development only
+            if not x_user:
+                return deny(401, "no user identity (X-User): requests without a user are denied")
+            user, agent = x_user, "unverified-agent"
+        if cfg.get("require_purpose") and not x_purpose:
+            return deny(400, "no purpose given (X-Purpose header)", user=user, agent=agent)
+
+        sid = x_session or f"{user}-{uuid.uuid4().hex[:8]}"
+        if sid in engine.sessions and engine.sessions[sid].user != user:
+            return deny(403, f"session {sid!r} belongs to another user", user=user, agent=agent)
+        body, ex = await engine.check_request(body, user, sid, agent, x_purpose)
 
         upstream_ms = None
         if ex.blocked:
@@ -108,7 +138,8 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
 
         entry = engine.record(ex, upstream_ms)
         resp["acl"] = {"seq": entry["seq"], "outcome": entry["outcome"], "decisions": entry["decisions"],
-                       "policy_version": entry["policy_version"], "session": sid}
+                       "policy_version": entry["policy_version"], "session": sid,
+                       "user": user, "agent": agent}
         return JSONResponse(resp, headers={"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": sid})
 
     return r

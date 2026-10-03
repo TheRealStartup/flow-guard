@@ -19,6 +19,8 @@ _TOKEN_KEY = os.urandom(16)
 class Session:
     id: str
     user: str
+    agent: str = "unknown-agent"
+    purpose: str | None = None
     vault: dict[str, str] = field(default_factory=dict)  # token id -> real value
     labels: set[str] = field(default_factory=set)  # e.g. {"CARD", "IBAN"}: data-flow labels
     seen: set[str] = field(default_factory=set)  # hashes of messages already checked and logged

@@ -58,7 +58,15 @@ budgets:
     max_tool_calls: 20
     max_compute_seconds: 300
 
-# Who the agent acts for (sent as the X-User header) and what each role may do.
+# Who is calling (US-1.2). api_key: every request presents a key (Authorization: Bearer) that maps to one
+# (user, agent) pair in identities.yaml; no key = denied, and the agent gets exactly that user's role.
+# header: trust the X-User header (local development only; anyone can claim to be anyone).
+identity:
+  mode: api_key
+  keys_file: identities.yaml
+  require_purpose: true     # every request states why (X-Purpose header); recorded in the audit log
+
+# What each user's role may do.
 users:
   alice: {role: support_junior}
   bob:   {role: fraud_analyst}

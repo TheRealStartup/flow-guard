@@ -27,7 +27,7 @@ def test_case(gw, case):
 
     reply = case.get("reply", {"text": "ok"})
     if "tool_call" in reply:  # "TOKEN_OF:<digits>" -> the token this session uses for that card
-        session = lambda: gw.app.state.engine.session("s1", case["user"])  # noqa: E731
+        session = lambda: gw.app.state.engine.session("s1", case["user"])
         args = json.dumps(reply["tool_call"]["arguments"])
         resolved = TOKEN_OF.sub(lambda m: session().tokenize("CARD", m.group(1)), args) if TOKEN_OF.search(args) else None
         reply = {"tool_call": {**reply["tool_call"], "arguments": json.loads(resolved) if resolved else reply["tool_call"]["arguments"]}}

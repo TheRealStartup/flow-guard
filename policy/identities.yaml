@@ -1,0 +1,6 @@
+# Who may call the gateway. One key = one (user, agent) pair; the agent acts for that user and gets
+# exactly that user's role (US-1.2: never more). Only SHA-256 hashes are stored here.
+# New key: `just new-key <user> <agent>` prints the key and the line to paste below.
+identities:
+  - {user: alice, agent: support-assistant, key_sha256: e3b3e35677977ee8fa521bc0e1c7cdcfe03479699e998f7ce044734fa9d88b40}
+  - {user: bob, agent: fraud-assistant, key_sha256: 1a3650a179ad4e34056563b33a37ffd94518fcb98d6118dc1b2c7e15e013a11c}

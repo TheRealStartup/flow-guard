@@ -12,7 +12,20 @@ import uuid
 from openai import OpenAI
 
 sys.path.insert(0, os.path.dirname(__file__))
-from world import TOOLS, run_tool  # noqa: E402
+from world import TOOLS, run_tool
+
+
+def dev_key(user: str) -> str:
+    """The demo user's API key: ACL_KEY env var, else demo/dev-keys.env (test keys for the local demo)."""
+    if os.getenv("ACL_KEY"):
+        return os.environ["ACL_KEY"]
+    path = os.path.join(os.path.dirname(__file__), "dev-keys.env")
+    with open(path) as f:
+        for line in f:
+            if line.startswith(f"ACL_KEY_{user.upper()}="):
+                return line.split("=", 1)[1].strip()
+    return "no-key"  # the gateway will refuse; that is the point
+
 
 SYSTEM = (
     "You are a customer-support assistant at a bank. Use the tools to help the support employee. "
@@ -28,11 +41,13 @@ def main() -> None:
     ap.add_argument("--model", default=os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash"))
     ap.add_argument("--gateway", default=os.getenv("ACL_URL", "http://127.0.0.1:8000/v1"))
     ap.add_argument("--steps", type=int, default=6)
+    ap.add_argument("--purpose", default="customer-support")
     a = ap.parse_args()
 
     sid = a.session or f"{a.user}-{uuid.uuid4().hex[:6]}"
-    client = OpenAI(base_url=a.gateway, api_key="unused-the-gateway-holds-the-keys",
-                    default_headers={"X-User": a.user, "X-Session": sid})
+    # The API key identifies this agent and the human it works for; the model keys stay in the gateway.
+    client = OpenAI(base_url=a.gateway, api_key=dev_key(a.user),
+                    default_headers={"X-Session": sid, "X-Purpose": a.purpose})
     messages: list[dict] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": a.prompt}]
     print(f"session {sid} · user {a.user} · model {a.model}\n")
 

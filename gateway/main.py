@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 
 from acl.adapters.llm_proxy import Upstream, call_upstream
 from acl.adapters.llm_proxy import router as llm_router
-from acl.detectors.jev import Judge, JevJudge
+from acl.detectors.jev import JevJudge, Judge
 from acl.engine import Engine
 from acl.policy import PolicyStore
 from acl.state import AuditLog

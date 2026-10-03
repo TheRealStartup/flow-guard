@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "gateway"))
-from acl.detectors.patterns import find_sensitive, luhn_ok  # noqa: E402
+from acl.detectors.patterns import find_sensitive, luhn_ok
 
 SYSTEM = {"role": "system", "content": "You are a bank support assistant."}
 
@@ -200,7 +200,7 @@ def _agent_loop(gw, user_name, prompt, max_steps=4):
 def test_demo_poisoned_record_is_quarantined(gw, tmp_path, monkeypatch):
     import world
     monkeypatch.setattr(world, "OUTBOX", tmp_path / "outbox.jsonl")
-    msg, log = _agent_loop(gw, "alice", "Customer 7 asked about their card limit.")
+    _, log = _agent_loop(gw, "alice", "Customer 7 asked about their card limit.")
     assert not (tmp_path / "outbox.jsonl").exists()
     assert any(d["control"] == "injection.jev" and d["action"] == "redact" for a in log for d in a["decisions"])
 
@@ -209,7 +209,7 @@ def test_demo_with_ai_check_off_the_flow_rule_still_stops_exfiltration(gw, tmp_p
     import world
     monkeypatch.setattr(world, "OUTBOX", tmp_path / "outbox.jsonl")
     gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(action="allow"))
-    msg, log = _agent_loop(gw, "alice", "Customer 7 asked about their card limit.")
+    msg, _ = _agent_loop(gw, "alice", "Customer 7 asked about their card limit.")
     assert not (tmp_path / "outbox.jsonl").exists(), "data left the organisation"
     assert "flow.sensitive_to_external" in msg["content"]
 
@@ -218,8 +218,66 @@ def test_demo_with_ai_check_off_the_flow_rule_still_stops_exfiltration(gw, tmp_p
 def test_live_jev_flags_the_poisoned_record():
     import asyncio
 
-    from acl.detectors.jev import JevJudge
     from world import CUSTOMERS
+
+    from acl.detectors.jev import JevJudge
 
     v = asyncio.run(JevJudge().judge(json.dumps(CUSTOMERS[7]), "tool_result", 15))
     assert v.injection >= 0.8
+
+
+# ---------- identity (US-1.2): the agent acts for one known human, never more ----------
+
+def test_request_without_key_is_denied_and_audited(gw):
+    r = gw.chat("mallory", user("hi"))  # mallory has no key
+    assert r.status_code == 401
+    e = gw.client.get("/api/events").json()[0]
+    assert e["outcome"] == "blocked" and e["decisions"][0]["control"] == "identity"
+
+
+def test_wrong_key_is_denied(gw):
+    r = gw.chat("alice", user("hi"), headers={"Authorization": "Bearer acl_alice_guessed"})
+    assert r.status_code == 401
+
+
+def test_key_cannot_claim_another_user(gw):
+    """Today's hole closed: alice's agent sending X-User: bob does not get bob's role."""
+    r = gw.chat("alice", user("hi"), headers={"X-User": "bob"})
+    assert r.status_code == 403 and "cannot act for someone else" in r.json()["error"]["message"]
+
+
+def test_role_comes_from_the_key_not_the_header(gw):
+    gw.upstream.next_reply = {"tool_call": {"name": "charge_card", "arguments": {"card_number": "x", "amount_pln": 1}}}
+    assert gw.chat("alice", user("charge")).json()["acl"]["outcome"] == "blocked"  # alice: support_junior
+    assert gw.chat("bob", user("charge"), session="b").json()["choices"][0]["message"].get("tool_calls")  # bob: fraud_analyst
+
+
+def test_purpose_is_required_and_recorded(gw):
+    r = gw.chat("alice", user("hi"), headers={"X-Purpose": ""})
+    assert r.status_code == 400
+    gw.upstream.next_reply = {"text": "ok"}
+    gw.chat("alice", user("hi"), headers={"X-Purpose": "refund case 1234"})
+    e = gw.client.get("/api/events").json()[0]
+    assert e["purpose"] == "refund case 1234" and e["agent"] == "support-assistant"
+
+
+def test_session_cannot_be_taken_over_by_another_user(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    assert gw.chat("alice", user("hi"), session="shared").status_code == 200
+    assert gw.chat("bob", user("hi"), session="shared").status_code == 403
+
+
+def test_revoking_a_key_takes_effect_live(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    assert gw.chat("alice", user("hi")).status_code == 200
+    keys = gw.dir / "identities.yaml"
+    keys.write_text("\n".join(l for l in keys.read_text().splitlines() if "user: alice" not in l) + "\n")
+    os.utime(keys, (keys.stat().st_atime, keys.stat().st_mtime + 5))
+    assert gw.chat("alice", user("hi"), session="s2").status_code == 401
+
+
+def test_header_mode_still_denies_anonymous(gw):
+    gw.edit_policy(lambda p: p["identity"].update(mode="header"))
+    assert gw.chat("mallory", user("hi")).status_code == 401  # no X-User at all
+    gw.upstream.next_reply = {"text": "ok"}
+    assert gw.chat("mallory", user("hi"), headers={"X-User": "mallory"}).status_code == 200

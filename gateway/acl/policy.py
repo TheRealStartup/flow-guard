@@ -28,6 +28,17 @@ class Policy:
     profile: str
     controls: dict[str, dict[str, Any]]
     signatures: list[Signature] = field(default_factory=list)
+    identities: dict[str, dict[str, str]] = field(default_factory=dict)  # key sha256 -> {user, agent}
+
+    @property
+    def identity(self) -> dict[str, Any]:
+        return {"mode": "api_key", "require_purpose": True, **self.raw.get("identity", {})}
+
+    def identify(self, api_key: str | None) -> dict[str, str] | None:
+        """Who is calling? Compares the SHA-256 of the presented key; the key itself is never stored."""
+        if not api_key:
+            return None
+        return self.identities.get(hashlib.sha256(api_key.encode()).hexdigest())
 
     def control(self, cid: str) -> dict[str, Any]:
         return self.controls.get(cid, {"action": "allow"})
@@ -64,7 +75,7 @@ def _merge(base: dict[str, dict], overrides: dict[str, dict]) -> dict[str, dict]
     return out
 
 
-def parse(text: str, base_dir: Path, sig_text: str | None = None) -> Policy:
+def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None) -> Policy:
     raw = yaml.safe_load(text) or {}
     profile = raw.get("active_profile", "balanced")
     profiles = raw.get("profiles", {})
@@ -78,10 +89,14 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None) -> Policy:
     sigs: list[Signature] = []
     if sig_text is not None:
         for s in json.loads(sig_text).get("signatures", []):
-            sigs.append(Signature(s["id"], re.compile(s["pattern"], re.I), s["where"], s.get("ref", "")))
+            sigs.append(Signature(s["id"], re.compile(s["pattern"], re.IGNORECASE), s["where"], s.get("ref", "")))
 
-    digest = hashlib.sha256(text.encode() + (sig_text or "").encode()).hexdigest()[:8]
-    return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs)
+    idents: dict[str, dict[str, str]] = {}
+    for i in (yaml.safe_load(keys_text) or {}).get("identities", []) if keys_text else []:
+        idents[str(i["key_sha256"]).lower()] = {"user": str(i["user"]), "agent": str(i.get("agent", "unknown-agent"))}
+
+    digest = hashlib.sha256(text.encode() + (sig_text or "").encode() + (keys_text or "").encode()).hexdigest()[:8]
+    return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents)
 
 
 class PolicyStore:
@@ -93,23 +108,32 @@ class PolicyStore:
 
     def __init__(self, path: Path):
         self.path = path
-        self._stamp: tuple[float, float] | None = None
+        self._stamp: tuple[float, ...] | None = None
         self._policy: Policy | None = None
         self.last_error: str | None = None
 
-    def _feed_path(self, raw: dict) -> Path | None:
+    def _side_files(self, raw: dict) -> tuple[Path | None, Path | None]:
+        """The signature feed and the identities file, both named in policy.yaml and watched too."""
         feed = raw.get("controls", {}).get("signatures", {}).get("feed")
-        return (self.path.parent / feed) if feed else None
+        keys = raw.get("identity", {}).get("keys_file")
+        return (self.path.parent / feed if feed else None, self.path.parent / keys if keys else None)
+
+    @staticmethod
+    def _mtime(p: Path | None) -> float:
+        return p.stat().st_mtime if p and p.exists() else 0.0
+
+    @staticmethod
+    def _read(p: Path | None) -> str | None:
+        return p.read_text() if p and p.exists() else None
 
     def get(self) -> Policy:
-        feed = self._feed_path(self._policy.raw) if self._policy else None
-        stamp = (self.path.stat().st_mtime, feed.stat().st_mtime if feed and feed.exists() else 0.0)
+        side = self._side_files(self._policy.raw) if self._policy else (None, None)
+        stamp = (self.path.stat().st_mtime, *map(self._mtime, side))
         if self._policy is None or stamp != self._stamp:
             try:
                 text = self.path.read_text()
-                feed = self._feed_path(yaml.safe_load(text) or {})
-                sig_text = feed.read_text() if feed and feed.exists() else None
-                self._policy = parse(text, self.path.parent, sig_text)
+                feed, keys = self._side_files(yaml.safe_load(text) or {})
+                self._policy = parse(text, self.path.parent, self._read(feed), self._read(keys))
                 self.last_error = None
             except Exception as e:  # keep the last good policy
                 if self._policy is None:
