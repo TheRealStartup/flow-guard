@@ -1,6 +1,7 @@
 # Goldman Sachs context for the pitch
 
-Compiled 2026-10-03 by the "Goldman Sachs and AI" research session. **[WEB]** = only search snippets were read, not the
+Compiled 2026-10-03 by the "Goldman Sachs and AI" research session. **Ranked cases, peers, incidents, frameworks: [goldman-cases.md](goldman-cases.md).**
+Correction: Goldman is a FINOS founding member and supports FINOS Common Controls for AI Services, but is **not** a maintainer of the FINOS AI Governance Framework. **[WEB]** = only search snippets were read, not the
 full articles. **[KNOW]** = from model knowledge, with a primary-source URL, not re-checked. **Open each link and check
 the exact wording before quoting anything on a slide.**
 
@@ -44,7 +45,7 @@ the exact wording before quoting anything on a slide.**
 | SR 11-7 | Validate, document and monitor models | One place to log and measure model use |
 | SEC 17a-4 (2022 amendment) | An "audit-trail" alternative to write-once storage: a complete, time-stamped history of changes | Hash-chained audit log (US-9.1) |
 | FINRA Notice 24-09 | Existing rules apply to gen-AI | Supervision + records for every call |
-| EU AI Act Art. 12 / 14 | Logging, human oversight for high-risk systems (GS Bank Europe SE) | Audit log, approvals (US-7.4). ⚠️ Check whether the "digital omnibus" proposal moved the deadlines. |
+| EU AI Act Art. 12 / 14 | Logging, human oversight for high-risk systems (GS Bank Europe SE) | Audit log, approvals (US-7.4). The Digital Omnibus (in force 2026-07-27, snippet) moved high-risk obligations to 2027-12-02. |
 | DORA | ICT third-party / concentration risk | Several model vendors behind one policy |
 
 Links: [15 U.S.C. 78o](https://www.law.cornell.edu/uscode/text/15/78o) ·
