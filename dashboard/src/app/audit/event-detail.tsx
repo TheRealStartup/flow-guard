@@ -82,6 +82,7 @@ function Exchange({ e, onSession }: { e: ExchangeEvent; onSession: (s: string) =
               ) : null,
             ],
             ["Model", e.model_served && e.model_served !== e.model ? `${e.model} → ${e.model_served}` : e.model],
+            ["Provider", e.provider],
             ["Policy", `${e.policy_version} · ${e.profile}`],
           ]}
         />
