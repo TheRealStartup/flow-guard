@@ -313,6 +313,20 @@ def test_policy_change_is_diffed_and_audited(gw):
     assert audited[0]["changes"] == h[0]["changes"]
 
 
+def test_policy_details_for_the_policy_page(gw):
+    d = gw.client.get("/api/policy/details").json()
+    assert d["profile"] == "balanced" and d["controls"]["pii.card"]["action"] == "redact"
+    assert d["profiles"]["strict"]["injection.jev"]["action"] == "block"
+    assert "send_email" in d["sinks"]["external"] and d["roles"]["support_junior"]["tools"]
+    assert {"user": "alice", "agent": "support-assistant"} in d["identity"]["keys"]
+    raw = json.dumps(d)
+    assert "key_sha256" not in raw and "kestrel" not in raw.lower() and "falcon" not in raw.lower()  # no key hashes, no deal names or codenames
+    assert d["users"]["marcus"]["deals"] == 1
+    assert d["barriers"]["restricted"][0]["terms"] > 0
+    gw.edit_policy(lambda p: p.update(active_profile="strict"))
+    assert gw.client.get("/api/policy/details").json()["controls"]["injection.jev"]["threshold"] == 0.5
+
+
 def test_rejected_policy_edit_is_reported_in_history(gw):
     gw.policy_path.write_text("active_profile: does-not-exist\n")
     os.utime(gw.policy_path, None)

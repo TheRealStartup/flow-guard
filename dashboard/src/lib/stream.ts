@@ -74,6 +74,8 @@ async function load() {
     const first = state.events === null;
     merge(list, reset || first);
     loaded = Math.max(loaded, limit);
+    // A consumer that registered while this load was in flight may want more history than we just fetched.
+    if (cap() > loaded) return load();
     return true;
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });

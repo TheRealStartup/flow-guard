@@ -63,6 +63,30 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         return {"version": p.version, "profile": p.profile, "controls": p.controls, "error": policies.last_error,
                 "signatures": [s.id for s in p.signatures], "last_change": policies.history[-1] if policies.history else None}
 
+    @app.get("/api/policy/details")
+    def policy_details():
+        """Everything the Policy page shows, structured: base controls and profile overrides, models, budgets,
+        roles, users, sinks, scopes, barriers, signatures, identities. Leaves out key hashes and the restricted
+        deals' ids and terms (naming a deal would itself leak it)."""
+        p = policies.get()
+        raw = p.raw
+        barriers = raw.get("barriers", {})
+        # Deal ids are codenames: report how many deals a user is cleared for, never which.
+        users = {u: {**{k: v for k, v in info.items() if k != "deals"}, **({"deals": len(info["deals"])} if "deals" in info else {})}
+                 for u, info in raw.get("users", {}).items()}
+        return {
+            "version": p.version, "profile": p.profile, "error": policies.last_error,
+            "defaults": raw.get("defaults", {}),
+            "base_controls": raw.get("controls", {}), "profiles": raw.get("profiles", {}), "controls": p.controls,
+            "models": p.models, "budgets": raw.get("budgets", {}),
+            "identity": {**p.identity, "keys": sorted(p.identities.values(), key=lambda i: i["user"])},
+            "users": users, "roles": raw.get("roles", {}), "sinks": raw.get("sinks", {}),
+            "scopes": raw.get("scopes", {}),
+            "barriers": {"public_message": p.barrier_message,
+                         "restricted": [{"terms": len(r.get("terms", []))} for r in barriers.get("restricted", [])]},
+            "signatures": [{"id": s.id, "where": s.where, "ref": s.ref} for s in p.signatures],
+        }
+
     last_poll = [0.0]
 
     async def poll_policy():

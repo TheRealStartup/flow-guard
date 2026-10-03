@@ -12,7 +12,7 @@ const OVERSIGHT: Item[] = [
   { href: "/overview", label: "Overview", icon: LayoutGrid },
   { href: "/audit", label: "Audit trail", icon: ListFilter },
   { href: "/demo", label: "Live demo", icon: FlaskConical },
-  { href: "/policies", label: "Policies", icon: SlidersVertical, soon: true },
+  { href: "/policies", label: "Policies", icon: SlidersVertical },
 ];
 
 export function Sidebar() {

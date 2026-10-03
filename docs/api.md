@@ -14,6 +14,7 @@ card number, IBAN, PESEL or secret: excerpts are masked (`[CARD]`) or tokenized 
 | `GET /api/sessions` | Session list | per session: `user`, `agent`, `steps`, `blocked`, `labels` (data the session holds: CARD, IBAN, …) |
 | `GET /api/sessions/{id}` | Session / data flow | `user`, `agent`, `purpose`, `role`, `usage` (tokens, cost, tool calls, labels), `tokens_issued`, `steps` (the audit entries in order) |
 | `GET /api/policy` | Policy | active controls after the profile is applied, `signatures`, **`last_change`** |
+| `GET /api/policy/details` | Policy page | everything structured: `base_controls`, `profiles` (overrides per profile), effective `controls`, `defaults`, `models`, `budgets`, `roles`, `users`, `sinks`, `scopes`, `barriers` (deal ids and term counts only, never the names), `signatures` (id, where, ref), `identity` (mode, purpose rule, `keys` as {user, agent}; no hashes) |
 | `GET /api/policy/history` | Policy banner | newest first: `version`, `previous`, `profile`, **`changes`** [{what, old, new}] (e.g. `controls.injection.jev.threshold` 0.8 → 0.5), `error` if an edit was rejected |
 | `GET /api/policy/raw` | Policy viewer | the YAML file as text |
 | `POST /api/try` `{user, prompt, model}` | Try it | runs the demo agent **through the gateway** as `alice` (support junior) or `bob` (fraud analyst). `model`: `mock/compromised` (obeys injections; instant) or `deepseek/deepseek-v4.1-flash` (real, a few seconds). Returns `steps`: `model` (with `acl.decisions`), `tool` (masked `result_preview`), or `denied`. Localhost only. |
