@@ -1,0 +1,106 @@
+import type { Action, AuditEvent, Decision, ExchangeEvent, Outcome } from "./api";
+
+// Human names for the controls in policy/policy.yaml. Unknown ids fall back to the id itself.
+export const CONTROLS: Record<string, { name: string; kind: string; scope: string }> = {
+  "models.allowlist": { name: "Model allowlist", kind: "Access", scope: "Only models listed in the policy" },
+  budget: { name: "Session budget", kind: "Budget", scope: "Tokens, cost, tool calls and compute per session" },
+  "pii.card": { name: "Card number protection", kind: "Privacy", scope: "Card numbers (regex + Luhn) → reversible token" },
+  "pii.iban": { name: "IBAN protection", kind: "Privacy", scope: "IBANs → reversible token" },
+  "pii.pesel": { name: "National ID protection", kind: "Privacy", scope: "PESEL with checksum → reversible token" },
+  "pii.passport": { name: "Passport protection", kind: "Privacy", scope: "Labelled passport numbers → reversible token" },
+  "pii.detokenize": { name: "Real value released", kind: "Privacy", scope: "Real values only for approved tools" },
+  "barrier.mnpi": { name: "Information barrier", kind: "Barrier", scope: "Restricted deals withheld from the public side" },
+  "access.scope": { name: "Client scope", kind: "Scope", scope: "Tool arguments limited to assigned clients" },
+  secrets: { name: "Secret protection", kind: "Privacy", scope: "API keys and private keys → token" },
+  signatures: { name: "Threat signatures", kind: "Threat", scope: "Known attack patterns from the signature feed" },
+  "access.tools": { name: "Role → tool access", kind: "Access", scope: "Each role may call only its listed tools" },
+  "flow.sensitive_to_external": { name: "Sensitive data stays inside", kind: "Flow", scope: "Tokens and MNPI may not reach external sinks" },
+  "injection.jev": { name: "Prompt-injection check", kind: "Injection", scope: "Quarantine text that tries to instruct the agent" },
+  spotlight: { name: "Spotlighting", kind: "Injection", scope: "Tool results reach the model marked as data" },
+  identity: { name: "Identity", kind: "Identity", scope: "API key → user and agent, purpose required" },
+};
+
+export const controlName = (id: string) => CONTROLS[id]?.name ?? id;
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+  allowed: "Allowed",
+  redacted: "Redacted",
+  flagged: "Flagged",
+  blocked: "Blocked",
+};
+
+export const ACTION_LABEL: Record<Action, string> = { allow: "Allow", flag: "Flag", redact: "Redact", block: "Block" };
+
+const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+
+export function utcTime(ts: number, ms = true) {
+  const d = new Date(ts * 1000);
+  const t = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  return ms ? `${t}.${pad(d.getUTCMilliseconds(), 3)}` : t;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function utcDate(ts: number) {
+  const d = new Date(ts * 1000);
+  return `${pad(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+export const eventId = (e: AuditEvent) => `EVT-${pad(e.seq, 6)}`;
+export const shortHash = (h: string) => (h ? `${h.slice(0, 8)}…${h.slice(-8)}` : "—");
+
+/** snake_case tool name → "Snake case". */
+export const humanize = (s: string) => {
+  const t = s.replace(/[_.]/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/** What an exchange was about, for the Action / Resource column. */
+export function eventTitle(e: AuditEvent): { title: string; detail: string } {
+  if (e.type === "policy_change") {
+    if (e.error) return { title: "Policy edit rejected", detail: "Last good policy stays active" };
+    const n = e.changes?.length ?? 0;
+    if (!n) return { title: "Policy loaded", detail: `${e.version} · ${e.profile}` };
+    return { title: "Policy changed", detail: `${e.version} · ${n} field${n === 1 ? "" : "s"}` };
+  }
+  const calls = e.tool_calls ?? [];
+  const call = calls.find((c) => c.outcome === "blocked") ?? calls[0];
+  if (call) {
+    const more = calls.length > 1 ? ` +${calls.length - 1}` : "";
+    return { title: humanize(call.name) + more, detail: `Tool call · ${call.name}` };
+  }
+  const denied = e.decisions.find((d) => d.where === "request" && d.action === "block");
+  if (denied) return { title: "Request denied", detail: controlName(denied.control) };
+  const fromTool = e.decisions.some((d) => d.where === "tool_result");
+  return { title: fromTool ? "Tool result to model" : "Prompt to model", detail: e.purpose ?? "Model request" };
+}
+
+/** The most severe decision of an exchange: what the headline should say. */
+export function headline(e: ExchangeEvent): { tone: Outcome; title: string; body: string } | null {
+  const block = e.decisions.find((d) => d.action === "block");
+  if (block) return { tone: "blocked", title: blockTitle(block), body: block.reason };
+  const redactions = e.decisions.filter((d) => d.action === "redact");
+  if (redactions.length) {
+    const quarantined = redactions.filter((d) => d.control === "injection.jev").length;
+    const hidden = redactions.length - quarantined;
+    const parts = [];
+    if (hidden) parts.push(`${hidden} value${hidden === 1 ? "" : "s"} replaced with tokens`);
+    if (quarantined) parts.push(`${quarantined} message${quarantined === 1 ? "" : "s"} quarantined`);
+    return { tone: "redacted", title: "Removed before the model saw it", body: parts.join(" · ") + "." };
+  }
+  const flag = e.decisions.find((d) => d.action === "flag");
+  if (flag) return { tone: "flagged", title: flag.control === "pii.detokenize" ? "Released only to an approved tool" : "Let through and flagged", body: flag.reason };
+  return null;
+}
+
+export function blockTitle(d: Decision) {
+  if (d.control.startsWith("flow.")) return "Blocked before it left";
+  if (d.control === "identity") return "Denied at the door";
+  if (d.control === "budget") return "Stopped by the budget";
+  if (d.where.startsWith("tool_call")) return "Stopped before it ran";
+  return "Request blocked";
+}
+
+export const whereLabel = (w: string) => {
+  if (w.startsWith("tool_call:")) return `Proposed call · ${w.slice(10)}`;
+  return { request: "Request", prompt: "User prompt", tool_result: "Tool result", response: "Model answer" }[w] ?? w;
+};

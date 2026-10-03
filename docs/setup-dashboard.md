@@ -17,7 +17,13 @@ Details for each step are in the README ("Run with Docker Compose").
    result card and the honest wording. Minimal set for the pitch: **Audit trail** + **Policies**.
 8. **See a policy change appear:** edit `policy/policy.yaml` (e.g. `active_profile: strict`), then reload
    `/api/policy/history`. Judges will do exactly this.
-9. **Dashboard code:** `dashboard/` (Next.js + shadcn). The dashboard calls `/api/*`, proxied to the gateway.
+9. **Dashboard code:** `dashboard/` (Next.js + shadcn). Pages: `/audit` (audit trail) and `/demo` (live demo, uses
+   Try it). The dashboard calls `/api/*`, proxied to the gateway.
+   **Hot reload without Node on the host:** `docker compose stop dashboard`, then
+   `docker compose --profile dev up -d dashboard-dev`. It serves http://localhost:3000 from your `dashboard/` folder,
+   Try it included. Edits reload in ~1 s (it polls); a **new route folder** needs `docker compose restart dashboard-dev`.
+   Back to the built one: `docker compose stop dashboard-dev && docker compose up -d --build dashboard`.
+   **With Node 22 on the host instead:**
    For hot reload, keep the gateway in Docker and run the dashboard on the host on another port (3000 is taken by
    the Docker dashboard): `cd dashboard && npm install && BACKEND_URL=http://127.0.0.1:8000 npm run dev -- -p 3001`,
    then open http://localhost:3001. All read endpoints work this way; only "Try it" (`POST /api/try`) is refused,

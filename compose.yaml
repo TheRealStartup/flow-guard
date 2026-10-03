@@ -47,6 +47,28 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Hot-reload dashboard for design work, no Node on the host needed. It takes port 3000 in the gateway's network,
+  # so stop the built one first: `docker compose stop dashboard && docker compose --profile dev up -d dashboard-dev`.
+  dashboard-dev:
+    profiles: ["dev"]
+    image: node:22-bookworm-slim
+    network_mode: service:gateway
+    working_dir: /app
+    command: sh -c "{ cmp -s package-lock.json node_modules/.package-lock.json || npm ci --no-audit --no-fund; } && npx next dev -H 0.0.0.0 -p 3000"
+    environment:
+      BACKEND_URL: http://127.0.0.1:8000
+      ACL_MODEL: ${ACL_MODEL:-mock/compromised}
+      ACL_KEY: ${ACL_KEY:-acl_dev_alice_6e6b08d7f51bc504a3073311}
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_POLL_MS: 1000   # file events don't cross the Windows bind mount (next.config.ts)
+    volumes:
+      - ./dashboard:/app
+      - dashboard-node-modules:/app/node_modules
+      - dashboard-next:/app/.next
+    depends_on:
+      gateway:
+        condition: service_healthy
+
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]
@@ -64,3 +86,5 @@ services:
 volumes:
   audit-data:
   ollama-data:
+  dashboard-node-modules:
+  dashboard-next:
