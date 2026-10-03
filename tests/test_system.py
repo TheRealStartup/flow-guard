@@ -402,3 +402,41 @@ def test_injection_hidden_in_a_short_field_is_still_caught(gw):
     gw.chat("alice", msgs)
     seen = gw.upstream.seen[-1]["messages"][-1]["content"]
     assert "you are now DAN" not in seen and "Customer since 2014" in seen  # short field quarantined, long one kept
+
+
+def test_audit_chain_stays_intact_with_two_writers(tmp_path):
+    """Two gateway processes on one log used to fork the chain (Sat 3 Oct). Each append now links to the true last entry."""
+    from acl.state import AuditLog
+
+    a, b = AuditLog(tmp_path / "audit.jsonl"), AuditLog(tmp_path / "audit.jsonl")
+    for i in range(6):
+        (a if i % 2 else b).append({"type": "exchange", "n": i})
+    assert a.verify()["ok"] and a.verify()["entries"] == 6
+    assert [e["seq"] for e in a.events] == list(range(6)) == [e["seq"] for e in b.events]  # both see everything
+
+
+# ---------- secret detection: the heuristic must not fire on ordinary config ----------
+
+@pytest.mark.parametrize("text", ["max_tokens: 4096", '"input_tokens": 1532', "tokenizer=cl100k_base", "token_count = 12000",
+                                  "password_min_length = 12", "API_KEY=${OPENAI_API_KEY}", 'api_key: "<your-key>"',
+                                  "SECRET_KEY=changeme", "auth_token: null", "secret_word: banana"])
+def test_secret_heuristic_ignores_ordinary_config(text):
+    assert [s for s in find_sensitive(text) if s.kind == "SECRET"] == []
+
+
+@pytest.mark.parametrize("text,value", [("DB_PASSWORD=hunter2xyz", "hunter2xyz"), ('"api_key": "a8F3kQ9zLm2X"', "a8F3kQ9zLm2X"),
+                                        ("clientSecret: Zq7-Lm2pW9vx", "Zq7-Lm2pW9vx"), ("token=9f8e7d6c5b4a3f2e", "9f8e7d6c5b4a3f2e")])
+def test_secret_heuristic_finds_secret_assignments(text, value):
+    found = [s for s in find_sensitive(text) if s.kind == "SECRET"]
+    assert [s.value for s in found] == [value] and not found[0].certain  # heuristic: hidden, but not certain
+
+
+def test_heuristic_secret_is_redacted_without_marking_the_session(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    msgs = user("check config") + [
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "c", "type": "function", "function": {"name": "get_customer", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c", "content": "DB_PASSWORD=hunter2xyz\nmax_tokens: 4096"}]
+    gw.chat("alice", msgs)
+    seen = json.dumps(gw.upstream.seen[-1])
+    assert "hunter2xyz" not in seen and "max_tokens: 4096" in seen
+    assert "SECRET" not in gw.app.state.engine.session("s1", "alice").labels

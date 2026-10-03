@@ -26,6 +26,7 @@ def test_offline_tryit_with_demo_judge(gw, tmp_path, monkeypatch, scenario, user
     import importlib
 
     from fastapi.testclient import TestClient
+
     from main import create_app
 
     world = importlib.import_module("world" if scenario == "support" else "onboarding")

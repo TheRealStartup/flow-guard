@@ -15,6 +15,7 @@ class Span:
     kind: str  # CARD | IBAN | PESEL | PASSPORT | SECRET
     value: str
     control: str  # policy control id that owns this detector
+    certain: bool = True  # False for heuristics: redacted, but they do not mark the session as holding this data
 
 
 def luhn_ok(digits: str) -> bool:
@@ -50,9 +51,37 @@ SECRET_RES = [
     re.compile(r"\b[rsp]k_(?:live|test)_[A-Za-z0-9]{16,}"),  # Stripe
 ]
 URL_CREDS_RE = re.compile(r"[a-z][\w+.-]*://[^/\s:@]+:([^@\s/]{3,})@", re.IGNORECASE)  # scheme://user:PASSWORD@host
-# The value of a secret-looking assignment in config files (.env, YAML, JSON): DB_PASSWORD=..., "api_key": "..."
-SECRET_ASSIGN_RE = re.compile(
-    r"""(?i)\b[\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|access[_-]?key)[\w.-]*["']?\s*[:=]\s*["']?([^\s"',;]{4,})""")
+# Heuristic: the value of a secret-looking assignment in config files (.env, YAML, JSON): DB_PASSWORD=..., "api_key": "...".
+# The key must contain a secret word as a WHOLE word (token yes; tokens, tokenizer, max_tokens no) and the value must
+# look like a secret (see _secret_like). Known false positives this rules out: max_tokens: 4096, tokenizer=cl100k_base.
+ASSIGN_RE = re.compile(r"""(?<![\w.-])([A-Za-z_][\w.-]*)["']?\s*[:=]\s*["']?([^\s"',;]+)""")
+SECRET_WORDS = {"password", "passwd", "pwd", "passphrase", "secret", "token", "credential", "credentials"}
+SECRET_PAIRS = {("api", "key"), ("apikey",), ("access", "key"), ("private", "key"), ("secret", "key"), ("auth", "token"),
+                ("client", "secret"), ("signing", "key"), ("encryption", "key")}
+PLACEHOLDER_RE = re.compile(r"^(?:\$\{.*\}|\$\w+|<.*>|\{\{.*\}\}|x{3,}|\*{3,}|changeme|change_me|your[_-]?\w*|example\w*|"
+                            r"dummy\w*|test|none|null|true|false|redacted|placeholder)$", re.IGNORECASE)
+
+
+def _key_words(key: str) -> list[str]:
+    key = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key)  # camelCase -> camel_Case
+    return [w for w in re.split(r"[_.\-]+", key.lower()) if w]
+
+
+def _secret_key(key: str) -> bool:
+    words = _key_words(key)
+    if any(w in SECRET_WORDS for w in words):
+        return True
+    return any(all(p in words for p in pair) for pair in SECRET_PAIRS)
+
+
+def _secret_like(value: str) -> bool:
+    """At least 8 characters, not a number, not a placeholder, and not one plain word (needs 2+ character classes)."""
+    if len(value) < 8 or value.startswith("[[") or PLACEHOLDER_RE.match(value):
+        return False
+    if re.fullmatch(r"[\d.,_-]+", value):
+        return False
+    classes = sum(bool(re.search(rx, value)) for rx in (r"[a-z]", r"[A-Z]", r"\d", r"[^A-Za-z0-9]"))
+    return classes >= 2
 
 
 def find_sensitive(text: str) -> list[Span]:
@@ -75,9 +104,9 @@ def find_sensitive(text: str) -> list[Span]:
             spans.append(Span(m.start(), m.end(), "SECRET", m.group(), "secrets"))
     for m in URL_CREDS_RE.finditer(text):
         spans.append(Span(m.start(1), m.end(1), "SECRET", m.group(1), "secrets"))
-    for m in SECRET_ASSIGN_RE.finditer(text):
-        if not m.group(1).startswith("[["):  # already a token
-            spans.append(Span(m.start(1), m.end(1), "SECRET", m.group(1), "secrets"))
+    for m in ASSIGN_RE.finditer(text):
+        if _secret_key(m.group(1)) and _secret_like(m.group(2)):
+            spans.append(Span(m.start(2), m.end(2), "SECRET", m.group(2), "secrets", certain=False))
     # Drop spans that overlap an earlier, longer one (e.g. digits of an IBAN read as a PESEL).
     spans.sort(key=lambda s: (s.start, -(s.end - s.start)))
     out: list[Span] = []

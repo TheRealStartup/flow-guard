@@ -155,7 +155,7 @@ class Engine:
                 continue
             out.append(Decision(span.control, action, where, f"{span.kind} detected"))
             if action == "redact":
-                text = text[: span.start] + s.tokenize(span.kind, span.value) + text[span.end :]
+                text = text[: span.start] + s.tokenize(span.kind, span.value, label=span.certain) + text[span.end :]
         return text, out[::-1]
 
     def _barrier(self, p: Policy, s: Session, text: str, where: str) -> tuple[str, list[Decision]]:
