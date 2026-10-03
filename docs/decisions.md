@@ -41,3 +41,11 @@ US-1.1 asks for overhead under 300 ms at p95. The Jev check can't meet that.
 - If we must meet 300 ms end to end, add a local classifier first (backlog).
 
 **Decide with:** the team, after the mentor conversation.
+
+## D4 · Two core demo scenarios · DECIDED (Paul, Sun ~01:10)
+- **A: client onboarding (KYC / CDD).** An institutional client, a hedge fund, whose documents probe for deal information. Shows information barriers, an "assigned clients only" rule, and identity documents that never reach the model.
+- **B: a developer using the real Claude Code** through the gateway. Shows client data at the vendor border (debugging a production payments log), attacks from the supply chain, and budgets.
+- **Customer support (alice/bob)** is background only: tests and dashboard examples, not on stage.
+
+## D5 · What "airtight" means · PRINCIPLE (Paul, Sun ~01:10)
+First and foremost, each scenario must make sense as a business case, use the language of the business, and get its details right: documents, thresholds, roles, data flows. Fallbacks and mocks are secondary.
