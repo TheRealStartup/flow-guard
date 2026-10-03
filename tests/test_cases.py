@@ -50,6 +50,10 @@ def test_case(gw, case):
         sent = json.dumps(gw.upstream.seen)
         for s in exp["model_never_sees"]:
             assert s not in sent, f"{s!r} reached the model"
+    if "spotlighted" in exp:
+        tool = [m["content"] for m in gw.upstream.seen[-1]["messages"] if m["role"] == "tool"] if gw.upstream.seen else []
+        wrapped = bool(tool) and all(c.startswith("<<tool_data id=") and c.count("<</tool_data") == 1 for c in tool)
+        assert wrapped == exp["spotlighted"], tool
     msg = body["choices"][0]["message"]
     if "tool_call_kept" in exp:
         assert bool(msg.get("tool_calls")) == exp["tool_call_kept"], msg

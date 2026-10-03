@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 ACTIONS = ("allow", "flag", "redact", "block")
+SPOTLIGHT_MODES = ("delimit", "off")
 
 
 @dataclass
@@ -47,6 +48,13 @@ class Policy:
 
     def action(self, cid: str) -> str:
         return self.control(cid).get("action", "allow")
+
+    @property
+    def spotlight(self) -> str | None:
+        """How tool results are marked as data before the model sees them, or None when off (no control, or mode: off)."""
+        c = self.controls.get("spotlight")
+        mode = c.get("mode", "delimit") if c else "off"
+        return None if mode == "off" else mode
 
     def on_error(self, cid: str) -> str:
         return self.control(cid).get("on_error", self.raw.get("defaults", {}).get("on_error", "block"))
@@ -106,6 +114,8 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
     for cid, c in controls.items():
         if c.get("action", "allow") not in ACTIONS:
             raise ValueError(f"control {cid}: action must be one of {ACTIONS}")
+    if controls.get("spotlight", {}).get("mode", "delimit") not in SPOTLIGHT_MODES:
+        raise ValueError(f"control spotlight: mode must be one of {SPOTLIGHT_MODES}")
 
     sigs: list[Signature] = []
     if sig_text is not None:

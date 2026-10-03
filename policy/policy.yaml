@@ -35,9 +35,13 @@ controls:
     threshold: 0.80   # Jev's probability that the text tries to instruct the agent
     timeout_s: 8       # Jev measured at 2–4.5 s on Sat afternoon (advertised 70–500 ms)
     on_error: block
+  spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
+    action: flag      # if tool data fakes our marker to break out of the block: flag | block (it is escaped either way)
+    mode: delimit     # delimit | off
 
 profiles:
   strict:
+    spotlight: {action: block}
     secrets: {action: block}
     flow.sensitive_to_external: {mode: session}
     injection.jev: {threshold: 0.50, action: block}

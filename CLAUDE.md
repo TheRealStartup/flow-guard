@@ -36,8 +36,9 @@ are in `demo/dev-keys.env` (test values). `just new-key <user> <agent>` makes a 
 ## Status (Sat 3 Oct ~16:30)
 Working: model proxy (`/v1/chat/completions`), policy live reload + profiles, card/IBAN/PESEL/secret
 redaction as reversible tokens, Jev injection/jailbreak check (fail closed on error), role → tools,
-data-flow block to external sinks, budgets (tokens/$/compute/tool calls), signature feed, hash-chained
-audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 82 tests, ~5 s, no network or keys; GitHub Actions runs it on every push/PR (`.github/workflows/test.yml`). Dashboard API: docs/api.md (+ /docs on the gateway).
+data-flow block to external sinks, spotlighting (tool results sent inside per-session `<<tool_data id=…>>` markers + a
+system note; fake markers escaped and flagged; `spotlight` control; tests/test_spotlight.py), budgets (tokens/$/compute/tool calls), signature feed, hash-chained
+audit log, `/api/metrics|events|audit/verify|audit/export`. `just test`: 102 tests, ~7 s, no network or keys; GitHub Actions runs it on every push/PR (`.github/workflows/test.yml`). Dashboard API: docs/api.md (+ /docs on the gateway).
 `mock/compromised` is a scripted model that obeys injections, for the demo and the tests.
 Not yet: dashboard views (only a test-prompt page so far), approvals, MCP gateway, streaming.
 Known: Jev measured 2–4.5 s per call on Sat (advertised 70–500 ms), timeout 8 s.

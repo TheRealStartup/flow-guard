@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import threading
 import time
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ class Session:
     labels: set[str] = field(default_factory=set)  # e.g. {"CARD", "IBAN"}: data-flow labels
     seen: set[str] = field(default_factory=set)  # hashes of messages already checked and logged
     quarantined: dict[str, str] = field(default_factory=dict)  # message hash -> replacement text
+    spotlight_id: str = field(default_factory=lambda: secrets.token_hex(4))  # in the tool-data markers; unguessable
     tokens: int = 0
     cost_usd: float = 0.0
     tool_calls: int = 0
