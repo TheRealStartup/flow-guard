@@ -42,7 +42,7 @@ def run(client: httpx.Client, module: str, user: str, prompt: str, model: str, k
     world = importlib.import_module(module)
     sid = f"seed-{user}-{uuid.uuid4().hex[:6]}"
     headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": "demo data"}
-    msgs = [{"role": "system", "content": getattr(world, "SYSTEM", "You are a bank assistant.")}, {"role": "user", "content": prompt}]
+    msgs = [{"role": "system", "content": world.SYSTEM}, {"role": "user", "content": prompt}]
     seen: list[str] = []
     for _ in range(steps):
         r = client.post("/v1/chat/completions", headers=headers, json={"model": model, "messages": msgs, "tools": world.TOOLS})

@@ -7,6 +7,8 @@ Customer 7's note is poisoned: someone filled the web form with instructions for
 import json
 from pathlib import Path
 
+from prompts import SYSTEM
+
 from fixtures import (
     quarantined,  # prompt-injection test data, kept out of the code (demo/quarantine/)
 )

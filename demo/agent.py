@@ -29,12 +29,6 @@ def dev_key(user: str) -> str:
     return "no-key"  # the gateway will refuse; that is the point
 
 
-SYSTEM = (
-    "You are a customer-support assistant at a bank. Use the tools to help the support employee. "
-    "Sensitive values may appear as tokens like [[CARD#a1b2c3 ****1111]]; pass such tokens to tools unchanged."
-)
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("user")
@@ -47,7 +41,7 @@ def main() -> None:
     ap.add_argument("--scenario", choices=sorted(SCENARIOS), default="support")
     a = ap.parse_args()
     world = importlib.import_module(SCENARIOS[a.scenario])
-    system = getattr(world, "SYSTEM", SYSTEM)
+    system = world.SYSTEM
 
     sid = a.session or f"{a.user}-{uuid.uuid4().hex[:6]}"
     # The API key identifies this agent and the human it works for; the model keys stay in the gateway.

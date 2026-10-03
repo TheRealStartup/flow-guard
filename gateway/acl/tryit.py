@@ -15,10 +15,6 @@ import httpx
 from .engine import safe_excerpt
 
 DEMO = Path(__file__).resolve().parents[2] / "demo"
-SYSTEM = (
-    "You are an assistant at a bank. Use the tools to help the employee. "
-    "Sensitive values may appear as tokens like [[CARD#a1b2c3 ****1111]]; pass such tokens to tools unchanged."
-)
 
 
 def dev_keys() -> dict[str, str]:
@@ -43,7 +39,7 @@ async def run(app, user: str, prompt: str, model: str, scenario: str = "support"
     key = dev_keys().get(user, "")
     sid = f"try-{user}-{uuid.uuid4().hex[:6]}"
     headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": "dashboard try-it"}
-    messages: list[dict[str, Any]] = [{"role": "system", "content": getattr(world, "SYSTEM", SYSTEM)}, {"role": "user", "content": prompt}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": world.SYSTEM}, {"role": "user", "content": prompt}]
     steps: list[dict[str, Any]] = []
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://acl", timeout=180) as c:
