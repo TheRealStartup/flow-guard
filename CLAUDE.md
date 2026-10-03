@@ -55,6 +55,11 @@ screen_sanctions, a poisoned client document (Jev quarantines only that field), 
 runs) and the flow rule (MNPI/PII never leaves). `mock/compromised` (gateway/acl/adapters/mock_model.py) obeys any
 instruction it reads, for every scenario. `--scenario developer` (devon; demo/developer.py): secret in .env redacted, http_post outside blocked, live
 threat-feed update, runaway test loop stopped by the budget. The poisoned README line is written by hand (TODO marker).
+`--scenario hr` (hana, hr_admin; demo/hr.py, synthetic people): `access.purpose` (decisions.md D7) stops X-Purpose
+performance_review/termination/ranking and prompts asking to rank/rate/evaluate/fire employees, first, before any model
+or Jev, with signatures and Jev off too. `get_employee` is DP30, scoped to `allowed_employees`, and not called while the
+model or Jev may not see it (`classification.block_calls_above_limit`). Policy questions go through `get_hr_policy`.
+Regexes are a floor, not a semantic guarantee. tests/test_hr.py covers both adapters and Try it.
 
 ## Claude Code behind the gateway (Sat ~22:30)
 `/v1/messages` adapter (gateway/acl/adapters/anthropic.py): Anthropic ↔ OpenAI translation around the unchanged engine,

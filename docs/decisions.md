@@ -69,3 +69,42 @@ gets them, the deal team included.
 **Known limit:** a tool result's class comes from the call id this gateway let through. For history the gateway never
 saw (a client that starts mid-conversation), it falls back to the tool name the agent claims. The MCP gateway removes
 that gap, because it sees the tool's own result.
+
+## D7 · HR: no model judges employees; personnel files reach no model (`access.purpose`, HR card)
+HR may use the agent for administration and policy questions, never to evaluate, rank, rate, review or decide on
+employees (a decision about a person is made by a person). Personnel files hold salary, health and manager notes.
+
+**Rule:** `access.purpose` in policy.yaml holds rules scoped to roles (today `hr-no-employee-judging` for `hr_admin`).
+It is the first check on every request, before the model allowlist, the data classes, the signatures and Jev, so a
+stopped request reaches neither the task model nor Jev, and it does not depend on `signatures` or `injection.jev` being
+on. It stops a request when:
+- the stated purpose (X-Purpose, or the key's default) contains a forbidden one: `performance_review`, `termination`,
+  `ranking` (case, spaces, `-` and `_` ignored, so `Performance Review` and `termination-letter` count);
+- any message of the conversation matches one of the rule's signatures (rank / rate / evaluate / performance review /
+  fire / who to let go, near an employee reference such as `E-1001`, "my team", "these employees"; a Polish variant
+  too), whatever the header claims. The whole history is searched on every request, so a request that once went
+  through (rule off at the time) is stopped when it is replayed after a live reload. Tool results are searched only if
+  their source class lets them reach the model; a record that is withheld anyway cannot carry a request to the model,
+  and a note in it that mentions a review must not stop admin work.
+The denial names the rule and the signature id, never the request text (excerpt `[WITHHELD: request text not
+recorded]`), so the audit log, the API answer and Try it do not repeat it. Ordinary work is not affected: "rank these
+cities", "sort the rates table", "what is the parental leave policy?" pass, and other roles are not checked at all.
+
+**Personnel files:** `get_employee` is DP30 (its class comes from `classification.tools`, set out of band, never from
+the record), scoped to the user's `allowed_employees` (`access.scope`: the call never runs outside them), and listed in
+`classification.block_calls_above_limit`: while the current model, or Jev while it is on, may not receive DP30, the call
+is not made at all, so the record is not even fetched. A record the agent holds anyway (forged or replayed history) is
+withheld by the class gate like any DP30 result. `get_hr_policy` (the published handbook) is internal. Both adapters
+(`/v1/chat/completions` and `/v1/messages`) call the same engine, so all of this applies to both (tests/test_hr.py).
+
+**Fail closed:** a malformed rule (no roles, forbidden not a list, a regex that does not compile or matches empty text,
+action `redact`) is rejected on reload and the last good policy, with its rules, stays active (`policy_error` in
+/api/metrics). A judge may still switch the control to `flag` or `allow` on purpose; that is a policy decision, logged
+as a policy change.
+
+**Known limits:** the signatures are deterministic regexes, not a semantic guarantee. They catch the plain ways of
+asking (and invisible or full-width characters, JSON escapes), not paraphrases ("who would you keep if budgets were
+cut?"), other languages than English and Polish, or look-alike letters from other scripts. They may also stop a
+borderline policy question that names a specific employee next to "termination". No model, ours or Jev, is used to
+judge HR prompts or records: an external judge would itself be a model processing the records. The purpose header is
+what the caller states; the rule stops a declared forbidden purpose, it cannot prove a declared benign one.

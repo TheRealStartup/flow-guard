@@ -25,7 +25,7 @@ def dev_keys() -> dict[str, str]:
             for line in path.read_text().splitlines() if line.startswith("ACL_KEY_")}
 
 
-SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer"}  # scenario name -> module in demo/
+SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer", "hr": "hr"}  # name -> module in demo/
 
 
 def _world(scenario: str):
@@ -34,11 +34,22 @@ def _world(scenario: str):
     return importlib.import_module(SCENARIOS[scenario])  # demo code, loaded only when Try it is used
 
 
-async def run(app, user: str, prompt: str, model: str, scenario: str = "support", max_steps: int = 6) -> dict[str, Any]:
+def _preview(app, tool: str, result: str) -> str:
+    """A masked preview, and none at all for a tool whose class is above the default (P2/DP30, or no class): the
+    dashboard must not show what the model may not see."""
+    p = app.state.engine.policies.get()
+    cls = p.tool_class(tool)
+    if p.rank(cls) > p.rank(p.classification.get("default")):
+        return f"[WITHHELD from preview: {cls or 'unclassified'} result]"
+    return safe_excerpt(result, width=300)
+
+
+async def run(app, user: str, prompt: str, model: str, scenario: str = "support", max_steps: int = 6,
+              purpose: str = "dashboard try-it") -> dict[str, Any]:
     world = _world(scenario)
     key = dev_keys().get(user, "")
     sid = f"try-{user}-{uuid.uuid4().hex[:6]}"
-    headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": "dashboard try-it"}
+    headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": purpose or "dashboard try-it"}
     messages: list[dict[str, Any]] = [{"role": "system", "content": world.SYSTEM}, {"role": "user", "content": prompt}]
     steps: list[dict[str, Any]] = []
 
@@ -62,6 +73,6 @@ async def run(app, user: str, prompt: str, model: str, scenario: str = "support"
                 result = world.run_tool(tc["function"]["name"], json.loads(tc["function"]["arguments"] or "{}"))
                 # The raw result goes back to the agent (the model only ever sees it redacted). The dashboard
                 # gets a masked preview: the reporting UI must not become a leak of its own.
-                steps.append({"kind": "tool", "name": tc["function"]["name"], "result_preview": safe_excerpt(result, width=300)})
+                steps.append({"kind": "tool", "name": tc["function"]["name"], "result_preview": _preview(app, tc["function"]["name"], result)})
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
     return {"session": sid, "user": user, "scenario": scenario, "model": model, "steps": steps}

@@ -6,6 +6,7 @@ identities:
   - {user: bob, agent: fraud-assistant, key_sha256: 1a3650a179ad4e34056563b33a37ffd94518fcb98d6118dc1b2c7e15e013a11c}
   - {user: olivia, agent: onboarding-assistant, key_sha256: 48ce484b96c3d7be0926a1c099afe7e16f9dd74141bf9538f26b1f11c7155033}
   - {user: marcus, agent: deal-assistant, key_sha256: ec9e42f0bf5a5af7e60c2a1a4d077651f7426bfbf4e978d110ed0ccf00a64aeb}
-  - {user: devon, agent: coding-assistant, key_sha256: d0e537f1f360624f1ee0c86c1aba84412948e23e72208bc1398b5be0e014cdf7}
+  - {user: hana, agent: hr-assistant, key_sha256: e6d89112622c2513d1f4c02689ae7421715c2d7121bbbcdda839d5944b1313c7}
+  - {user: devon, agent: coding-assistant,key_sha256: d0e537f1f360624f1ee0c86c1aba84412948e23e72208bc1398b5be0e014cdf7}
   # Claude Code itself (unmodified), via ANTHROPIC_BASE_URL. It cannot send X-Purpose, so the key carries one.
   - {user: devon, agent: claude-code, purpose: "fix the fx-rates-service tests", key_sha256: 03ffb812126571257388be623f2b93a190b53ea301909960c7a539f4d5addb3a}

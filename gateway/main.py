@@ -35,7 +35,8 @@ class TryRequest(BaseModel):
     user: str = "alice"
     prompt: str
     model: str = "mock/compromised"
-    scenario: str = "support"  # support | onboarding
+    scenario: str = "support"  # support | onboarding | developer | hr
+    purpose: str = "dashboard try-it"  # sent as X-Purpose (the HR purpose rule reads it)
 
 
 def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstream: Upstream = call_upstream) -> FastAPI:
@@ -119,7 +120,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             raise HTTPException(400, f"unknown demo user {req.user!r}; known: {sorted(tryit.dev_keys())}")
         if req.scenario not in tryit.SCENARIOS:
             raise HTTPException(400, f"unknown scenario {req.scenario!r}; known: {sorted(tryit.SCENARIOS)}")
-        return await tryit.run(app, req.user, req.prompt, req.model, req.scenario)
+        return await tryit.run(app, req.user, req.prompt, req.model, req.scenario, purpose=req.purpose)
 
     @app.get("/api/audit/verify")
     def audit_verify():
