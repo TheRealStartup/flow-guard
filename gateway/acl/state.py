@@ -74,8 +74,8 @@ class AuditLog:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._events: list[dict[str, Any]] = []
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
+        self._events: list[dict[str, Any]] = []
         self._prev = "0" * 64
         self._offset = 0  # bytes of the file already read into _events
         self._sync()
@@ -93,6 +93,10 @@ class AuditLog:
                 e = json.loads(line)
                 self._events.append(e)
                 self._prev = e["hash"]
+                # Every caller holds the lock, so listeners see entries once and in seq order, including
+                # entries other writers appended. Listeners must not block (see stream.py).
+                for fn in self._listeners:
+                    fn(e)
         self._offset += end
 
     @property
@@ -115,19 +119,15 @@ class AuditLog:
             entry["hash"] = self._digest(self._prev, entry)
             f.write(json.dumps(entry, default=str) + "\n")
             f.flush()
-            self._sync()
-            entry = self._events[-1]
-            # Under the lock, so every listener sees entries in seq order. Listeners must not block (see stream.py).
-            for fn in self._listeners:
-                fn(entry)
-            return entry
+            self._sync()  # reads the line back, which also notifies the listeners
+            return self._events[-1]
 
     def subscribe(self, fn: Callable[[dict[str, Any]], None], after: int | None = None) -> list[dict[str, Any]]:
         """Call `fn` with every entry appended from now on. Returns the entries after seq `after` (none if None).
         Both happen under the lock, so backlog + live entries have no gap and no duplicate."""
         with self._lock:
+            self._sync()  # not self.events: that property takes the (non-reentrant) lock we already hold
             self._listeners.append(fn)
-            self._sync()  # self.events would take the lock again
             return [] if after is None else self._events[max(after + 1, 0):]
 
     def unsubscribe(self, fn: Callable[[dict[str, Any]], None]) -> None:
