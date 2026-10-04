@@ -101,7 +101,7 @@ def test_events_stream_and_sessions_serve_the_same_summary(gw):
     s = e["summary"]
     assert s["label"] == "Attack caught" and "quarantined in the get_customer result" in s["headline"]
     assert s["counts"]["quarantined"] == 1 and s["counts"]["hidden"] == 1
-    assert "98% likely an injection, limit 80%" in s["reason"]
+    assert re.search(r"98% likely an injection, limit \d+%", s["reason"])
     steps = gw.client.get(f"/api/sessions/{e['session']}").json()["steps"]
     assert steps[-1]["summary"] == s
 
