@@ -20,7 +20,7 @@ async def test_offline_judge(text, expected):
 
 @pytest.mark.parametrize("scenario, user, prompt, expected", [
     ("support", "alice", "Look up customer 7", "redact"),
-    ("onboarding", "olivia", "Prepare the onboarding file for client NW-2041", "block"),  # P2 client file: not to Jev
+    ("onboarding", "olivia", "Prepare the onboarding file for client NW-2041", "redact"),  # poisoned ownership document quarantined
 ])
 def test_offline_tryit_with_demo_judge(gw, tmp_path, monkeypatch, scenario, user, prompt, expected):
     import importlib

@@ -62,13 +62,20 @@ receive but Jev may not (`injection.jev.max_class`, never above `max_to_model`) 
 request is blocked, whatever `on_error` says. Missing classes or limits fail closed; a misspelt class keeps the last
 good policy. Every request re-classifies the whole history, so a lowered limit applies to earlier messages too.
 
-**Defaults:** Jev `internal`; `get_client_file` P2, so the onboarding flow stops at the client file unless
-`injection.jev.max_class` is raised to P2 (a live-edit demo). The Falcon deal and `query_datalake` are DP30: no model
+**Defaults:** ~~Jev `internal`~~ Jev `P2` (amended, see below); `get_client_file` P2. The Falcon deal and `query_datalake` are DP30: no model
 gets them, the deal team included.
 
 **Known limit:** a tool result's class comes from the call id this gateway let through. For history the gateway never
 saw (a client that starts mid-conversation), it falls back to the tool name the agent claims. The MCP gateway removes
 that gap, because it sees the tool's own result.
+
+**Amended (Paul, Sun ~02:25): Jev's limit = the model vendor's limit, P2.** With Jev at `internal`, the policy handed
+the client file to one outside vendor (the model, via OpenRouter) but not to the other (Jev) that guards it, so every
+onboarding run was blocked and core scenario A could not run. A destination's limit follows its vendor approval, not
+its job; both are outside processors, so both get P2, and DP30 reaches neither. The mechanism is unchanged: lowering
+Jev's limit below the data still stops the request (the tests now set that limit explicitly). Open: Jev is still a third
+party. The production answer is an in-house model plus an on-premise injection check for P2 (open-weight classifier),
+with outside vendors at `internal` (board card).
 
 ## D7 · Data lake: named queries, refused before they run, labels verified (first demo)
 The agent never writes a query; it names one from `datalake.queries` in policy.yaml (`demo/datalake.py` holds the

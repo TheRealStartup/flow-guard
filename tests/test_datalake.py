@@ -67,6 +67,7 @@ def test_result_above_the_model_limit_is_never_fetched(gw):
 
 
 def test_p2_result_is_not_fetched_while_jev_cannot_check_it(gw):
+    gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(max_class="internal"))
     calls, ds = ask_query(gw, "olivia", "client_positions")
     assert not calls and refused(ds)
 

@@ -36,7 +36,8 @@ controls:
     threshold: 0.80   # Jev's probability that the text tries to instruct the agent
     timeout_s: 8       # Jev answers in 0.6–0.8 s (measured Sat night; 2–4.5 s earlier that day)
     on_error: block
-    max_class: internal  # Jev is an external service (api.typesafe.ai): it never receives P2/DP30 (see classification)
+    max_class: P2        # Jev (api.typesafe.ai) is an outside processor like the model vendor, approved to the same
+                         # class: whatever the model may read, Jev may check. DP30 reaches neither (see classification)
   spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
     action: flag      # if tool data fakes our marker to break out of the block: flag | block (it is escaped either way)
     mode: delimit     # delimit | off

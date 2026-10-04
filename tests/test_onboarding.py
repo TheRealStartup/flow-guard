@@ -64,7 +64,8 @@ def test_sanctions_screening_gets_the_real_passport(gw, outbox):
     assert ("pii.detokenize", "flag") in decisions
 
 
-def test_client_file_is_not_sent_to_jev_by_default(gw, outbox):
+def test_client_file_is_not_sent_to_jev_when_its_limit_is_lower(gw, outbox):
+    gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(max_class="internal"))
     _, decisions, tools_run = run(gw, "olivia", PREPARE)
     assert ("injection.jev", "block") in decisions  # P2 cannot be checked by Jev, so it does not go through unchecked
     assert [t[0] for t in tools_run] == ["get_client_file"]

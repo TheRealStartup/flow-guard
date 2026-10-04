@@ -79,7 +79,7 @@ DP30), or the data-lake query that produced it. A tool not listed is unclassifie
 Tokenising identifiers never lowers a class.
 
 Each destination has a limit: `max_to_model` for every model, a model's own `max_class` below that, and
-`injection.jev.max_class` for the outside judge (`internal`: Jev never receives P2 or DP30). Content above the limit is
+`injection.jev.max_class` for the outside judge (`P2`, the same approval as the model vendor; DP30 reaches neither). Content above the limit is
 withheld. A tool result that may reach the model but not Jev cannot be injection-checked, so that request is blocked.
 
 ## Data lake

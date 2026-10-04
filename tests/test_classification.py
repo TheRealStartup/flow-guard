@@ -1,5 +1,6 @@
-"""Data classes at every model boundary (issue #13). P2/DP30 content must reach neither the task model nor Jev, which
-is an external service. The canaries are synthetic business facts with nothing a regex can find (no card, IBAN, ID or
+"""Data classes at every model boundary (issue #13). Each destination has a class limit: DP30 reaches neither the task
+model nor Jev; the shipped policy approves both outside vendors for P2, and the tests that lower Jev's limit check the
+request stops when a result cannot be checked. The canaries are synthetic business facts with nothing a regex can find (no card, IBAN, ID or
 key), so only the class (from the source or a restricted term) can stop them. Each test checks what actually left the
 gateway: the bodies the upstream model received, the texts the judge received, and the audit log."""
 
@@ -47,6 +48,11 @@ def nowhere(gw, *canaries):
         assert c not in to_model(gw), "reached the model"
         assert c not in to_jev(gw), "reached Jev"
         assert c not in audit(gw), "written to the audit log"
+
+
+def jev_internal_only(gw):
+    """Jev's limit below the client file's class (the shipped policy approves Jev for P2, like the model vendor)."""
+    gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(max_class="internal"))
 
 
 def jev_may_see_p2(gw):
@@ -122,9 +128,10 @@ def test_claude_code_path_is_gated_too(gw):
     nowhere(gw, DP30)
 
 
-# ---------- P2: may reach the model, may not reach Jev ----------
+# ---------- Jev's limit below the data: the request stops (never sent unchecked) ----------
 
 def test_p2_is_not_sent_to_jev_and_the_request_stops(gw):
+    jev_internal_only(gw)
     r = with_result(gw, "get_client_file", json.dumps({"note": P2}), user="olivia")
     assert ("injection.jev", "block") in decisions(r)
     assert not gw.upstream.seen and not gw.judge.calls  # never checked, so never sent anywhere
@@ -133,12 +140,14 @@ def test_p2_is_not_sent_to_jev_and_the_request_stops(gw):
 
 
 def test_p2_stops_even_when_jev_is_down(gw):
+    jev_internal_only(gw)
     gw.judge.fail = True
     with_result(gw, "get_client_file", json.dumps({"note": P2}), user="olivia")
     assert not gw.upstream.seen and not gw.judge.calls
 
 
 def test_p2_retry_is_blocked_again(gw):
+    jev_internal_only(gw)
     for _ in range(3):
         r = with_result(gw, "get_client_file", json.dumps({"note": P2}), user="olivia")
         assert ("injection.jev", "block") in decisions(r)
@@ -146,6 +155,7 @@ def test_p2_retry_is_blocked_again(gw):
 
 
 def test_permissive_profile_does_not_lift_the_limits(gw):
+    jev_internal_only(gw)
     gw.edit_policy(lambda p: p.update(active_profile="permissive"))
     with_result(gw, "get_client_file", json.dumps({"note": P2}), user="olivia", session="p2")
     with_result(gw, "query_datalake", json.dumps({"note": DP30}), session="dp30")
@@ -244,6 +254,7 @@ def test_real_jev_http_payloads_never_carry_restricted_data(gw, tmp_path):
     jev._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = TestClient(create_app(gw.policy_path, tmp_path / "jev-audit.jsonl", jev, gw.upstream))
     gw.client = client
+    jev_internal_only(gw)
     docs = [{"title": "Sector note", "text": INTERNAL}, {"title": "Kestrel Dynamics memo", "text": DP30}]
     with_result(gw, "search_documents", json.dumps(docs), user="marcus", session="h1")
     with_result(gw, "get_client_file", json.dumps({"note": P2}), user="olivia", session="h2")
