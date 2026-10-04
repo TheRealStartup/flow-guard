@@ -1,5 +1,8 @@
 # Demo script (pitch order)
 
+> **Two scripts exist.** Inez's [`docs/pitch/demo-script.md`](pitch/demo-script.md) (with the deck) is the preferred
+> one (Paul, Sun ~02:38). Merge this file's business-language lines and open gaps into it later, then delete this one.
+
 Two core scenarios (decision D4). Dashboard http://localhost:3000 next to the terminal. Each step: **do**, what
 **happens**, and the line to **say** (business language, decision D5). Gateway: `just gateway`; dashboard: `just dashboard`.
 
