@@ -9,10 +9,10 @@
     "CARD": {
       "tp": 60,
       "fn": 0,
-      "fp": 62,
-      "precision": 0.4918032786885246,
+      "fp": 2,
+      "precision": 0.967741935483871,
       "recall": 1.0,
-      "f1": 0.6593406593406593
+      "f1": 0.9836065573770492
     },
     "IBAN": {
       "tp": 60,
@@ -23,12 +23,12 @@
       "f1": 1.0
     },
     "PASSPORT": {
-      "tp": 30,
-      "fn": 30,
+      "tp": 40,
+      "fn": 20,
       "fp": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 0.6666666666666666,
+      "f1": 0.8
     },
     "PESEL": {
       "tp": 40,
@@ -39,12 +39,12 @@
       "f1": 1.0
     },
     "SECRET": {
-      "tp": 60,
-      "fn": 20,
+      "tp": 80,
+      "fn": 0,
       "fp": 0,
       "precision": 1.0,
-      "recall": 0.75,
-      "f1": 0.8571428571428571
+      "recall": 1.0,
+      "f1": 1.0
     }
   },
   "per_category": {
@@ -65,8 +65,8 @@
     },
     "passport (labelled)": {
       "n": 40,
-      "hit": 30,
-      "rate": 0.75
+      "hit": 40,
+      "rate": 1.0
     },
     "passport (unlabelled)": {
       "n": 20,
@@ -100,13 +100,13 @@
     },
     "secret (env-assign)": {
       "n": 10,
-      "hit": 0,
-      "rate": 0.0
+      "hit": 10,
+      "rate": 1.0
     },
     "secret (json-assign)": {
       "n": 10,
-      "hit": 0,
-      "rate": 0.0
+      "hit": 10,
+      "rate": 1.0
     },
     "secret (private-key)": {
       "n": 10,
@@ -115,8 +115,8 @@
     },
     "order number 16 digits": {
       "n": 100,
-      "hit": 9,
-      "rate": 0.09
+      "hit": 2,
+      "rate": 0.02
     },
     "invalid card checksum": {
       "n": 60,
@@ -140,8 +140,8 @@
     },
     "unix timestamp ms": {
       "n": 60,
-      "hit": 9,
-      "rate": 0.15
+      "hit": 0,
+      "rate": 0.0
     },
     "uuid": {
       "n": 60,
@@ -150,18 +150,18 @@
     },
     "git sha": {
       "n": 60,
-      "hit": 1,
-      "rate": 0.016666666666666666
+      "hit": 0,
+      "rate": 0.0
     },
     "isbn-13": {
       "n": 60,
-      "hit": 3,
-      "rate": 0.05
+      "hit": 0,
+      "rate": 0.0
     },
     "imei": {
       "n": 40,
-      "hit": 40,
-      "rate": 1.0
+      "hit": 0,
+      "rate": 0.0
     },
     "amount and date": {
       "n": 60,
@@ -190,20 +190,10 @@
     }
   },
   "latency_ms": {
-    "p50": 0.009497998689766973,
-    "p95": 0.016350997611880302
+    "p50": 0.008957002137321979,
+    "p95": 0.017402999219484627
   },
   "missed_case_ids": [
-    "passport-labelled-1",
-    "passport-labelled-5",
-    "passport-labelled-9",
-    "passport-labelled-13",
-    "passport-labelled-17",
-    "passport-labelled-21",
-    "passport-labelled-25",
-    "passport-labelled-29",
-    "passport-labelled-33",
-    "passport-labelled-37",
     "passport-unlabelled-0",
     "passport-unlabelled-1",
     "passport-unlabelled-2",
@@ -223,90 +213,10 @@
     "passport-unlabelled-16",
     "passport-unlabelled-17",
     "passport-unlabelled-18",
-    "passport-unlabelled-19",
-    "secret-env-assign-5",
-    "secret-json-assign-6",
-    "secret-env-assign-13",
-    "secret-json-assign-14",
-    "secret-env-assign-21",
-    "secret-json-assign-22",
-    "secret-env-assign-29",
-    "secret-json-assign-30",
-    "secret-env-assign-37",
-    "secret-json-assign-38",
-    "secret-env-assign-45",
-    "secret-json-assign-46",
-    "secret-env-assign-53",
-    "secret-json-assign-54",
-    "secret-env-assign-61",
-    "secret-json-assign-62",
-    "secret-env-assign-69",
-    "secret-json-assign-70",
-    "secret-env-assign-77",
-    "secret-json-assign-78"
+    "passport-unlabelled-19"
   ],
   "false_alarm_case_ids": [
-    "neg-order-number-16-digits-10",
-    "neg-order-number-16-digits-15",
-    "neg-order-number-16-digits-18",
     "neg-order-number-16-digits-20",
-    "neg-order-number-16-digits-31",
-    "neg-order-number-16-digits-55",
-    "neg-order-number-16-digits-66",
-    "neg-order-number-16-digits-78",
-    "neg-order-number-16-digits-94",
-    "neg-unix-timestamp-ms-3",
-    "neg-unix-timestamp-ms-12",
-    "neg-unix-timestamp-ms-26",
-    "neg-unix-timestamp-ms-28",
-    "neg-unix-timestamp-ms-37",
-    "neg-unix-timestamp-ms-41",
-    "neg-unix-timestamp-ms-45",
-    "neg-unix-timestamp-ms-53",
-    "neg-unix-timestamp-ms-54",
-    "neg-git-sha-44",
-    "neg-isbn-13-15",
-    "neg-isbn-13-27",
-    "neg-isbn-13-41",
-    "neg-imei-0",
-    "neg-imei-1",
-    "neg-imei-2",
-    "neg-imei-3",
-    "neg-imei-4",
-    "neg-imei-5",
-    "neg-imei-6",
-    "neg-imei-7",
-    "neg-imei-8",
-    "neg-imei-9",
-    "neg-imei-10",
-    "neg-imei-11",
-    "neg-imei-12",
-    "neg-imei-13",
-    "neg-imei-14",
-    "neg-imei-15",
-    "neg-imei-16",
-    "neg-imei-17",
-    "neg-imei-18",
-    "neg-imei-19",
-    "neg-imei-20",
-    "neg-imei-21",
-    "neg-imei-22",
-    "neg-imei-23",
-    "neg-imei-24",
-    "neg-imei-25",
-    "neg-imei-26",
-    "neg-imei-27",
-    "neg-imei-28",
-    "neg-imei-29",
-    "neg-imei-30",
-    "neg-imei-31",
-    "neg-imei-32",
-    "neg-imei-33",
-    "neg-imei-34",
-    "neg-imei-35",
-    "neg-imei-36",
-    "neg-imei-37",
-    "neg-imei-38",
-    "neg-imei-39"
+    "neg-order-number-16-digits-55"
   ]
 }
