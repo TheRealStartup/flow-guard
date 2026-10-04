@@ -6,6 +6,7 @@ const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false, // the dev badge covered the sidebar footer on stage
   // Docker Desktop on Windows/macOS doesn't pass file events into the container; the dashboard-dev service polls.
   ...(process.env.NEXT_POLL_MS ? { watchOptions: { pollIntervalMs: Number(process.env.NEXT_POLL_MS) } } : {}),
   async rewrites() {

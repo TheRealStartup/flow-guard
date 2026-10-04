@@ -480,7 +480,7 @@ function Signatures({ d, onChanged }: { d: Details; onChanged: () => void }) {
       <table className="w-full text-left text-[15px]">
         <thead className="border-b bg-muted text-sm text-muted-foreground">
           <tr>
-            <th className="py-2.5 pl-6 font-normal">Severity</th>
+            <th className="w-28 py-2.5 pl-6 font-normal">Severity</th>
             <th className="py-2.5 font-normal">Attack</th>
             <th className="py-2.5 font-normal">Checked in</th>
             <th className="py-2.5 font-normal">Known since</th>
@@ -498,7 +498,7 @@ function Signatures({ d, onChanged }: { d: Details; onChanged: () => void }) {
                 <div className="font-mono text-xs text-muted-foreground">{s.id}</div>
               </td>
               <td className="py-3 pr-3 text-sm text-muted-foreground">{s.where.join(", ").replaceAll("_", " ")}</td>
-              <td className="py-3 pr-3 font-mono text-sm">{s.published ?? "—"}</td>
+              <td className="py-3 pr-3 font-mono text-sm whitespace-nowrap">{s.published ?? "—"}</td>
               <td className="py-3 pr-6 text-sm">
                 {s.cve && <div className="font-mono">{s.cve}</div>}
                 {(s.sources ?? []).slice(0, 2).map((u) => (

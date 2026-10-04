@@ -87,7 +87,7 @@ export default function DemoPage() {
                 <Select value={example} onChange={pick} options={[...EXAMPLES.map((e) => ({ value: e.id, label: e.label })), { value: "custom", label: "Custom prompt" }]} />
               </Field>
               <Field label="Acting as">
-                <Select value={user} onChange={(v) => { setUser(v); setExample("custom"); }} options={Object.keys(USERS).map((u) => ({ value: u, label: `${u} · ${USERS[u].scenario}` }))} />
+                <Select value={user} onChange={(v) => { setUser(v); setExample("custom"); }} options={Object.keys(USERS).map((u) => ({ value: u, label: `${u} · ${USERS[u].title}` }))} />
               </Field>
               <Field label="Model">
                 <Select value={model} onChange={setModel} options={MODELS} />
@@ -311,7 +311,8 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
             const meta = CONTROLS[id];
             const params = Object.entries(c)
               .filter(([k]) => k !== "action")
-              .map(([k, v]) => `${k}: ${v}`)
+              // nested settings (e.g. the HR rules) are summarised, never printed as "[object Object]"
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? `${v.length} entries` : v && typeof v === "object" ? `${Object.keys(v).length} settings` : v}`)
               .join(" · ");
             const hit = fired?.has(id);
             return (

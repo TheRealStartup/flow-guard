@@ -66,7 +66,7 @@ export default function OverviewPage() {
               role="radio"
               aria-checked={range === r.value}
               onClick={() => setRange(r.value)}
-              className={cn("rounded px-4 py-1.5 text-[15px]", range === r.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
+              className={cn("rounded px-4 py-1.5 text-[15px] whitespace-nowrap", range === r.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
             >
               {r.label}
             </button>
@@ -276,8 +276,8 @@ function RecentBlocks({ o }: { o: Overview }) {
         })}
         {!o.recentBlocks.length && <li className="px-6 py-10 text-center text-muted-foreground">No attacks or blocks in this range.</li>}
       </ul>
-      <Link href="/audit" className="flex items-center gap-2 border-t px-6 py-3 text-sm text-muted-foreground hover:text-foreground">
-        All blocked events in the audit trail <ArrowRight className="size-4" />
+      <Link href="/audit?outcome=attack" className="flex items-center gap-2 border-t px-6 py-3 text-sm text-muted-foreground hover:text-foreground">
+        All defused attacks in the audit trail <ArrowRight className="size-4" />
       </Link>
     </Panel>
   );

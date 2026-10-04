@@ -21,7 +21,7 @@ export function EventDetail({ event, verify, onSession }: { event: AuditEvent | 
   const [raw, setRaw] = useState(false);
 
   return (
-    <Panel className="sticky top-6 flex max-h-[calc(100vh-3rem)] w-[460px] shrink-0 flex-col">
+    <Panel className="sticky top-6 flex max-h-[calc(100vh-3rem)] w-[400px] shrink-0 flex-col 2xl:w-[460px]">
       <PanelHeader icon={<FileText className="size-5" />} title="Event detail" />
       {!event ? (
         <div className="p-6 text-muted-foreground">Select an event to see its decisions.</div>

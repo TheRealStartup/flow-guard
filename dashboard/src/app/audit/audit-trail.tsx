@@ -54,7 +54,7 @@ export function AuditTrail() {
   const [action, setAction] = useState("");
   const [agent, setAgent] = useState("");
   const [user, setUser] = useState("");
-  const [outcome, setOutcome] = useState("");
+  const [outcome, setOutcome] = useState(params.get("outcome") ?? "");
   const [query, setQuery] = useState(params.get("q") ?? params.get("session") ?? "");
   const [pageSize, setPageSize] = useState(12);
   const [page, setPage] = useState(0);
@@ -152,15 +152,20 @@ export function AuditTrail() {
       />
 
       <StatRow>
-        <Stat label="Total events" value={exchanges.length} unit={range === "all" ? "all time" : rangeLabel} note={`Across ${agents.length} active agent${agents.length === 1 ? "" : "s"}`} />
+        <Stat
+          label="Agent requests"
+          value={events ? exchanges.length : "—"}
+          unit={range === "all" ? "all time" : rangeLabel}
+          note={events ? `Across ${agents.length} active agent${agents.length === 1 ? "" : "s"} · ${inRange.length - exchanges.length} policy events besides` : "Loading the audit log…"}
+        />
         <Stat
           label="Attacks defused"
-          value={exchanges.filter((e) => e.threats?.length).length}
+          value={events ? exchanges.filter((e) => e.threats?.length).length : "—"}
           tone="block"
           note={`Injections quarantined, exfiltrations stopped · ${count("blocked")} requests blocked in total`}
         />
-        <Stat label="Redacted" value={count("redacted")} tone="redact" note="Sensitive values hidden from the model" />
-        <Stat label="Flagged" value={count("flagged")} tone="flag" note="Let through, recorded for review" />
+        <Stat label="Redacted" value={events ? count("redacted") : "—"} tone="redact" note="Sensitive values hidden from the model" />
+        <Stat label="Flagged" value={events ? count("flagged") : "—"} tone="flag" note="Let through, recorded for review" />
       </StatRow>
 
       <Panel className="mb-6 px-6 pt-5 pb-4">
@@ -195,7 +200,7 @@ export function AuditTrail() {
         </div>
         <div className="mt-4 flex items-center text-[15px] text-muted-foreground">
           <span>
-            Showing {filtered ? `${rows.length} matching events` : "all events"} · {rangeLabel}
+            Showing {filtered ? `${rows.length} matching event${rows.length === 1 ? "" : "s"}` : "all events"} · {rangeLabel}
           </span>
           <span className={cn("ml-auto flex items-center gap-2", error && "text-block")}>
             {live ? <Radio className="size-4 text-primary" /> : <RefreshCw className="size-4" />}
@@ -230,12 +235,11 @@ export function AuditTrail() {
           <table className="w-full table-fixed text-left">
             <thead className="border-b bg-muted text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
-                <th className="w-40 py-3 pl-5">Timestamp (UTC) ↓</th>
-                <th className="py-3">Action / Resource</th>
-                <th className="w-44 py-3">Agent ID</th>
-                <th className="w-28 py-3">User ID</th>
+                <th className="w-28 py-3 pl-5">Time (UTC) ↓</th>
+                <th className="py-3">What happened</th>
+                <th className="w-36 py-3">User · agent</th>
                 <th className="w-32 py-3">Outcome</th>
-                <th className="w-10" />
+                <th className="w-6" />
               </tr>
             </thead>
             <tbody>
@@ -260,8 +264,10 @@ export function AuditTrail() {
                       <div className="truncate font-medium">{title}</div>
                       <div className="truncate text-sm text-muted-foreground">{sub}</div>
                     </td>
-                    <td className="truncate py-3 pr-3 font-mono text-sm">{e.type === "exchange" ? (e.agent ?? "—") : "policy.yaml"}</td>
-                    <td className="truncate py-3 pr-3 font-mono text-sm">{e.type === "exchange" ? (e.user ?? "—") : "—"}</td>
+                    <td className="truncate py-3 pr-3 text-sm">
+                      <div className="truncate font-mono">{e.type === "exchange" ? (e.user ?? "—") : "policy.yaml"}</div>
+                      <div className="truncate font-mono text-muted-foreground">{e.type === "exchange" ? (e.agent ?? "—") : ""}</div>
+                    </td>
                     <td className="py-3">
                       {e.type === "exchange" ? (
                         e.threats?.length ? <Pill tone="block">Attack defused</Pill> : <OutcomePill outcome={e.outcome} />
@@ -306,7 +312,16 @@ export function AuditTrail() {
           </div>
         </Panel>
 
-        <EventDetail event={detail} verify={verify} onSession={(s) => set(setQuery)(s)} />
+        <EventDetail
+          event={detail}
+          verify={verify}
+          onSession={(s) => {
+            // A session is read as one story: clear the other filters so none of its steps are hidden.
+            for (const reset of [setAction, setAgent, setUser, setOutcome]) reset("");
+            setRange("all");
+            set(setQuery)(s);
+          }}
+        />
       </div>
     </>
   );
