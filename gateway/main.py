@@ -1,6 +1,7 @@
 """AI Control Layer: policy engine + model proxy + reporting API.
 
-Run: `just gateway` (port 8000). Agents use base_url http://localhost:8000/v1.
+Run: `just gateway` (port 8000). Agents use base_url http://localhost:8000/v1; Claude Code uses
+ANTHROPIC_BASE_URL=http://localhost:8000 (`just claude-code`).
 Interactive API docs for the dashboard: http://localhost:8000/docs
 """
 
@@ -16,10 +17,11 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from acl import tryit
+from acl.adapters.anthropic import router as anthropic_router
 from acl.adapters.llm_proxy import Upstream, call_upstream
 from acl.adapters.llm_proxy import router as llm_router
-from acl.detectors.jev import JevJudge, Judge
 from acl.detectors.demo import DemoJudge
+from acl.detectors.jev import JevJudge, Judge
 from acl.engine import Engine
 from acl.policy import PolicyStore, parse, set_control_action
 from acl.state import AuditLog
@@ -40,7 +42,8 @@ class TryRequest(BaseModel):
     user: str = "alice"
     prompt: str
     model: str = "mock/compromised"
-    scenario: str = "support"  # support | onboarding
+    scenario: str = "support"  # support | onboarding | developer | hr
+    purpose: str = "dashboard try-it"  # sent as X-Purpose (the HR purpose rule reads it)
 
 
 def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstream: Upstream = call_upstream) -> FastAPI:
@@ -54,6 +57,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     app.state.engine = engine
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.include_router(llm_router(engine, upstream))
+    app.include_router(anthropic_router(engine, upstream))  # Claude Code: ANTHROPIC_BASE_URL=http://localhost:8000
 
     @app.get("/api/health")
     def health():
@@ -189,7 +193,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             raise HTTPException(400, f"unknown demo user {req.user!r}; known: {sorted(tryit.dev_keys())}")
         if req.scenario not in tryit.SCENARIOS:
             raise HTTPException(400, f"unknown scenario {req.scenario!r}; known: {sorted(tryit.SCENARIOS)}")
-        return await tryit.run(app, req.user, req.prompt, req.model, req.scenario)
+        return await tryit.run(app, req.user, req.prompt, req.model, req.scenario, purpose=req.purpose)
 
     @app.get("/api/audit/verify")
     def audit_verify():

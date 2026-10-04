@@ -12,5 +12,10 @@ from our own key to a question:
 
 Errors: 401 auth, 422 validation, 429/529 → retry with backoff (and our policy's `on_error`).
 
+What Jev receives: `state.text` is permitted content in clear text, sent outside the bank. Identifiers are tokens by
+then, but business facts are not, so the engine sends only content at or below `injection.jev.max_class` (default
+`internal`). P2/DP30 content is never sent; a request that would need it checked is blocked (docs/decisions.md D6,
+tests/test_classification.py).
+
 Verified 14:45 Sat with a fake injection in a tool output: `prompt_injection` 0.98, `risk` = block (0.98),
 0.95 s total for two questions (one call, including the TLS handshake).

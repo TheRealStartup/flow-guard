@@ -2,6 +2,7 @@
 
     just agent alice "Customer 7 asked about their card limit. Look them up and answer."
     uv run python ../demo/agent.py olivia "Prepare the onboarding file for client NW-2041." --scenario onboarding
+    uv run python ../demo/agent.py hana "What is the parental leave policy?" --scenario hr --purpose hr-admin
 """
 
 import argparse
@@ -14,7 +15,7 @@ import uuid
 from openai import OpenAI
 
 sys.path.insert(0, os.path.dirname(__file__))
-SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer"}  # scenario name -> module in demo/
+SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer", "hr": "hr"}  # name -> module in demo/
 
 
 def dev_key(user: str) -> str:
@@ -63,7 +64,8 @@ def main() -> None:
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments or "{}")
             result = world.run_tool(tc.function.name, args)
-            print(f"→ {tc.function.name}({json.dumps(args)})\n  ← {result[:160]}{'…' if len(result) > 160 else ''}")
+            shown = "(personnel file, not printed)" if tc.function.name == "get_employee" else result[:160] + ("…" if len(result) > 160 else "")
+            print(f"→ {tc.function.name}({json.dumps(args)})\n  ← {shown}")
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
     print("\n(step limit reached)")
 

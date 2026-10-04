@@ -18,14 +18,15 @@ async def test_offline_judge(text, expected):
     assert verdict.model == "demo-keyword-judge"
 
 
-@pytest.mark.parametrize("scenario, user, prompt", [
-    ("support", "alice", "Look up customer 7"),
-    ("onboarding", "olivia", "Prepare the onboarding file for client NW-2041"),
+@pytest.mark.parametrize("scenario, user, prompt, expected", [
+    ("support", "alice", "Look up customer 7", "redact"),
+    ("onboarding", "olivia", "Prepare the onboarding file for client NW-2041", "block"),  # P2 client file: not to Jev
 ])
-def test_offline_tryit_with_demo_judge(gw, tmp_path, monkeypatch, scenario, user, prompt):
+def test_offline_tryit_with_demo_judge(gw, tmp_path, monkeypatch, scenario, user, prompt, expected):
     import importlib
 
     from fastapi.testclient import TestClient
+
     from main import create_app
 
     world = importlib.import_module("world" if scenario == "support" else "onboarding")
@@ -38,5 +39,5 @@ def test_offline_tryit_with_demo_judge(gw, tmp_path, monkeypatch, scenario, user
         assert response.status_code == 200, response.text
         decisions = [d for step in response.json()["steps"] if step.get("acl")
                      for d in step["acl"]["decisions"]]
-        assert any(d["control"] == "injection.jev" and d["action"] == "redact" for d in decisions)
+        assert any(d["control"] == "injection.jev" and d["action"] == expected for d in decisions)
     assert not outbox.exists()

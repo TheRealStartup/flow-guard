@@ -1,6 +1,6 @@
 # AI Control Layer: the single source of truth for every control.
 # Re-read automatically when this file changes; no restart needed. Every audit entry
-# records `version` + a hash of this file, so you can see which policy made a decision.
+# records `version` + a hash of this file, so you can see which policy made a decision. Documented in docs/policy.md.
 version: "0.2"
 
 # strict | balanced | permissive. Profiles override the controls below (see `profiles`).
@@ -24,6 +24,7 @@ controls:
   pii.passport:       {action: redact}    # passport numbers, where the text labels them
   barrier.mnpi:       {action: redact}    # information barrier: redact = withhold restricted results from the wrong side
   access.scope:       {action: block}     # tool arguments limited to the user's own scope (e.g. assigned clients)
+  access.datalake:    {action: block}     # data lake: named queries only, refused before they run (see datalake)
   secrets:            {action: redact}    # API keys, private keys
   signatures:         {action: block, feed: signatures.json}
   access.tools:       {action: block}     # role → allowed tools
@@ -33,11 +34,56 @@ controls:
   injection.jev:
     action: redact    # redact = quarantine the suspicious message; block = stop the whole request
     threshold: 0.80   # Jev's probability that the text tries to instruct the agent
-    timeout_s: 8       # Jev measured at 2–4.5 s on Sat afternoon (advertised 70–500 ms)
+    timeout_s: 8       # Jev answers in 0.6–0.8 s (measured Sat night; 2–4.5 s earlier that day)
     on_error: block
+    max_class: internal  # Jev is an external service (api.typesafe.ai): it never receives P2/DP30 (see classification)
   spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
     action: flag      # if tool data fakes our marker to break out of the block: flag | block (it is escaped either way)
     mode: delimit     # delimit | off
+  # Purposes a role may not pursue with a model at all (docs/decisions.md D8). Checked first, before the model, Jev or
+  # any other check sees the request, and independent of signatures and injection.jev. allow | flag | block.
+  # `forbidden`: X-Purpose values (case, spaces, - and _ ignored; "termination_letter" contains "termination").
+  # `signatures`: the request text, in every message of the conversation (history included), whatever X-Purpose claims.
+  # Regexes are a deterministic floor, not a semantic guarantee: they catch the plain ways of asking, not every way.
+  access.purpose:
+    action: block
+    rules:
+      - id: hr-no-employee-judging
+        roles: [hr_admin]
+        message: "HR may not use an AI model to evaluate, rank or decide on employees; a person makes that decision"
+        forbidden: [performance_review, termination, ranking]
+        signatures:
+          - id: HR-EVAL-RANK
+            ref: "ranking people: rank / leaderboard near an employee reference"
+            pattern: '\b(?:rank\w*|league tables?|leaderboards?)\b[^.?!\n]{0,60}?\b(?:employees?|staff(?:ers?)?|workers?|team[- ]?members?|colleagues?|direct[- ]reports?|subordinates?|personnel|headcount|my team|our team|the team|e-\d{3,})\b(?![- ]*(?:benefits?|perks?|discounts?|handbook|polic(?:y|ies)|surveys?|programs?|programmes?|plans?|portal|options?|assistance))|\b(?:employees?|staff(?:ers?)?|workers?|team[- ]?members?|colleagues?|direct[- ]reports?|subordinates?|personnel|my team|our team|the team|e-\d{3,})\b(?![- ]*(?:benefits?|perks?|discounts?|handbook|polic(?:y|ies)|surveys?|programs?|programmes?|plans?|portal|options?|assistance))[^.?!\n]{0,40}?\b(?:rank(?:s|ed|ing|ings)?|league tables?|leaderboards?)\b'
+          - id: HR-EVAL-RATE
+            ref: "rate / score / evaluate / compare with an employee as the object"
+            pattern: '\b(?:rate|rating|score|scoring|grade|grading|evaluate|evaluating|appraise|appraising|assess|assessing|judge|judging|compare|comparing)\s+(?:(?:the|my|our|these|those|all|each|every|this|that|both|of)\s+){0,3}(?:employees?|staff(?:ers?)?|workers?|team[- ]?members?|colleagues?|direct[- ]reports?|subordinates?|personnel|team|e-\d{3,})\b(?!\s*(?:handbook|polic(?:y|ies)|benefits?|guide|portal|directory|survey|discount|leave))'
+          - id: HR-EVAL-PERFORMANCE
+            ref: "performance review / evaluation / rating of a named employee or team"
+            pattern: '\b(?:performance|productivity)[- ]?(?:reviews?|evaluations?|appraisals?|ratings?|scores?|assessments?|rankings?)\b(?!\s+(?:polic(?:y|ies)|process|procedures?|calendar|cycle|timeline|template|guidelines?|rules))[^.?!\n]{0,60}?\b(?:e-\d{3,}|my team|our team|the team|team[- ]?members?|direct[- ]reports?|subordinates?|(?:this|that|these|those|each|every|all|the|our|my) employees?)\b|\b(?:e-\d{3,}|my team|our team|the team|team[- ]?members?|direct[- ]reports?|subordinates?|(?:this|that|these|those|each|every|all|the|our|my) employees?)\b[^.?!\n]{0,60}?\b(?:performance|productivity)[- ]?(?:reviews?|evaluations?|appraisals?|ratings?|scores?|assessments?|rankings?)\b'
+          - id: HR-EVAL-TERMINATION
+            ref: "firing / termination / demotion of a named employee or team, or who to let go"
+            pattern: '\b(?:fire|firing|dismiss|dismissing|dismissal|terminate|terminating|termination|sack|sacking|lay\s*off|laying\s*off|let\s+go|demote|demoting|demotion)\b(?!\s+(?:polic(?:y|ies)|process|procedures?|notice|rules|guidelines?|checklist))[^.?!\n]{0,60}?\b(?:e-\d{3,}|my team|our team|the team|team[- ]?members?|direct[- ]reports?|subordinates?|(?:this|that|these|those|each|every|all|the|our|my|an?) employees?)\b|\b(?:e-\d{3,}|team[- ]?members?|direct[- ]reports?|subordinates?|(?:this|that|these|those|each|every|all|the|our|my) employees?)\b[^.?!\n]{0,60}?\b(?:fired|dismissed|terminated|sacked|laid\s+off|let\s+go|demoted|fire|dismiss|terminate|sack|demote)\b|\b(?:who|whom|which(?!\s+(?:events?|alerts?|alarms?|webhooks?|hooks?|triggers?|callbacks?|signals?|jobs?|tasks?|requests?|notifications?|emails?|messages?|queries?|handlers?|listeners?|process(?:es)?|threads?|pipelines?|builds?|deploy\w*|tests?|scripts?|cron\w*|timers?|interrupts?|instances?|pods?|containers?|sessions?|connections?|servers?|nodes?|vms?|services?|analytics|metrics?|logs?)\b))\b[^.?!\n]{0,40}?\b(?:fire|dismiss|terminate|sack|lay\s*off|let\s+go|demote)\b'  # "which event should we fire?" is a technical question
+          - id: HR-EVAL-BEST-WORST
+            ref: "best / worst / under-performing people"
+            pattern: '\b(?:who|which)\b[^.?!\n]{0,60}?\b(?:underperform\w*|(?:low|top|high|best|worst|weakest|strongest|poorest)[- ]?perform\w*|(?:most|least) productive)\b|\b(?:top|bottom|best|worst|weakest|strongest|poorest|lowest|highest)\s+(?:\d+\s+)?(?:employees?|staff(?:ers?)?|workers?|team[- ]?members?|colleagues?|performers?)\b'
+          - id: HR-EVAL-NAMED-FIRE
+            ref: "should we fire / terminate / let go of a person named in the prompt (Maria, maria kowalska, them)"
+            pattern: '\b(?:should|shall|must|can|could|would|will|do)\s+(?:we|i|you|they|hr)\s+(?:(?:just|really|actually|finally|now)\s+)?(?:fire|terminate|dismiss|sack|lay\s*off|demote)\s+(?!(?:the|a|an|this|that|these|those|it|its|our|my|your|their|off|up|on|at|away|and|or|again|once|now|when|if|after|before|every|each|all|both|events?|alerts?|alarms?|webhooks?|hooks?|triggers?|callbacks?|signals?|jobs?|tasks?|requests?|notifications?|emails?|messages?|queries?|handlers?|listeners?|workers?|process(?:es)?|threads?|pipelines?|builds?|deploy\w*|tests?|scripts?|cron\w*|timers?|interrupts?|missiles?|rockets?|weapons?|guns?|analytics|metrics?|logs?)\b)[a-z][\w''’-]*(?:\s+(?!(?:twice|again|once|immediately|manually|automatically|first|last|later|early|too|on|at|in|when|if|after|before|every|each)\b)[a-z][\w''’-]*)?\s*(?:[?.!,;:]|$|\s+(?:or\s+not|now|today|tomorrow|soon|already|yet|this|next|over|because|instead))|\b(?:should|shall|must|can|could|would|will|do)\s+(?:we|i|you|they|hr)\s+let\s+(?!(?:it|that|this|them\s+know|him\s+know|her\s+know|the|a|an)\b)[a-z][\w''’-]*(?:\s+[a-z][\w''’-]*)?\s+go\b'
+          # A name is any word that is not a determiner or a technical object (event, process, instance, ...).
+          - id: HR-EVAL-NAMED-DIRECT
+            ref: "an order to fire / terminate / demote a person named in the prompt (Fire Maria.)"
+            pattern: '(?:^|[.!?;:\n]\s*)(?:(?:please|now|just)\s+)?(?:fire|terminate|dismiss|sack|demote|lay\s+off)\s+(?!(?:the|a|an|this|that|these|those|it|its|our|my|your|their|all|each|every|both|away|up|off|on|at|events?|alerts?|alarms?|webhooks?|hooks?|triggers?|callbacks?|signals?|jobs?|tasks?|requests?|notifications?|emails?|messages?|queries?|handlers?|listeners?|process(?:es)?|threads?|pipelines?|builds?|deploy\w*|tests?|scripts?|cron\w*|timers?|interrupts?|instances?|pods?|containers?|sessions?|connections?|servers?|nodes?|vms?|services?|analytics|metrics?|logs?|missiles?|rockets?|weapons?|guns?)\b)[a-z][\w''’-]*(?:\s+(?!(?:now|today|tomorrow|immediately|asap|this|again|twice|once|events?|instances?|process(?:es)?|jobs?|tasks?|pods?|containers?|sessions?|servers?)\b)[a-z][\w''’-]*)?\s*(?:[.!?]|$|\s+(?:now|today|tomorrow|immediately|asap|this\s+(?:week|month|quarter))\b)'
+          - id: HR-EVAL-NAMED-REVIEW
+            ref: "performance review of / evaluate the performance of a person named in the prompt (Maria's performance)"
+            pattern: '\b(?:performance|productivity)[- ]?(?:reviews?|evaluations?|appraisals?|assessments?|ratings?|feedback|reports?)\s+(?:for|of|on|about)\s+(?!(?:the|a|an|this|that|these|those|it|its|our|my|your|their|all|each|every|both|employees?|staff|managers?|everyone|new|next|last|q[1-4]|h[12]|fy\w*|\d+|apis?|endpoints?|queries?|databases?|servers?|services?|models?|code|apps?|builds?|pipelines?|jobs?|tests?)\b)[a-z][\w''’-]*(?:\s+[a-z][\w''’-]*)?\s*(?:[.!?,;]|$)|\b(?:evaluate|evaluating|assess|assessing|rate|rating|review|reviewing|appraise|appraising|judge|judging|score|scoring|grade|grading|critique|critiquing)\s+(?!(?:the|a|an|this|that|these|those|it|its|our|my|your|their|apis?|endpoints?|queries?|databases?|servers?|services?|models?|code|apps?|builds?|pipelines?|jobs?|tests?|systems?|teams?)\b)[a-z][\w-]*(?:\s+[a-z][\w-]*)?(?:''s|’s)\s+(?:(?:job|work|overall|recent|annual|yearly|quarterly)\s+)?(?:performance|productivity|work|output|contribution|results)\b'
+          - id: HR-EVAL-NAMED-RANK
+            ref: "rank / rate / compare people named in the prompt (Alice and Bob) by performance or who is better"
+            pattern: '\b(?:rank\w*|rate|rating|compare|comparing|score|scoring|grade|grading|evaluate|evaluating|assess|assessing|stack[- ]?rank\w*)\s+[a-z][\w''’-]*(?:\s*,\s*[a-z][\w''’-]*)*\s*,?\s+(?:and|or|vs\.?|versus|against|with)\s+[a-z][\w''’-]*\b(?!\s+(?:plans?|options?|funds?|benefits?|packages?|polic(?:y|ies)|coverage|schemes?|providers?|insurers?|tiers?|perks?|offers?|vendors?|tools?|rates?|cities|offices?|locations?))[^.?!\n]{0,40}?\b(?:performance|productivity|output|results|contribution|impact|competence|merit|reliability|attitude|work|who\s+is\s+(?:better|best|worse|worst|stronger|weaker)|(?:better|best|worse|worst|strongest|weakest)\s+(?:employee|performer|worker|colleague))\b'
+          - id: HR-EVAL-PL
+            ref: "the same in Polish: ocena / ranking / zwolnienie pracownika"
+            pattern: '\b(?:oce\w+|ranking\w*|rankuj\w*|zwolni\w*)\b[^.?!\n]{0,60}?\bpracowni\w*|\bpracowni\w*[^.?!\n]{0,60}?\b(?:oce\w+|ranking\w*|rankuj\w*|zwolni\w*)'  # ASCII only: oce\w+ covers ocena, ocenić, oceń
 
 profiles:
   strict:
@@ -80,12 +126,16 @@ users:
   olivia: {role: onboarding_analyst, side: public, assigned_clients: [NW-2041]}   # onboarding scenario
   marcus: {role: mna_banker, side: private, deals: [falcon]}                      # onboarding scenario
   devon:  {role: developer}                                                       # developer scenario (stub)
+  hana:   {role: hr_admin, allowed_employees: [E-1001, E-1002]}                   # HR scenario: only these two personnel files
 roles:
   support_junior:     {tools: [get_customer, send_email]}
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
-  onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, send_email]}
-  mna_banker:         {tools: [search_documents, send_email]}
-  developer:          {tools: [list_files, read_file, run_tests, http_post]}
+  onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, query_datalake, send_email]}
+  mna_banker:         {tools: [search_documents, query_datalake, send_email]}
+  developer:                                   # devon's scripted agent and Claude Code (the capitalised names)
+    tools: [list_files, read_file, run_tests, http_post, Read, Glob, Grep, Edit, Write, Bash, WebFetch, TodoWrite]
+    budget: {max_tokens: 2000000, max_compute_seconds: 1800}   # Claude Code sends ~16k tokens per request
+  hr_admin:           {tools: [get_employee, get_hr_policy], redact_purpose: true}   # HR administration; never judging people (access.purpose); X-Purpose not reported (D8)
   default:            {tools: []}
 
 # Information barriers (US-1.3). Content naming a restricted deal is withheld from anyone not on that deal,
@@ -93,12 +143,78 @@ roles:
 barriers:
   public_message: "Some results are outside your access."
   restricted:
-    - {id: falcon, terms: ["Project Falcon", "Kestrel Dynamics", "KSTL"]}
+    - {id: falcon, class: DP30, terms: ["Project Falcon", "Kestrel Dynamics", "KSTL"]}
 
 # Limits on tool arguments: a tool may only be called for things inside the user's own scope.
 scopes:
   get_client_file: {argument: client_id, user_field: assigned_clients}
+  get_employee:    {argument: employee_id, user_field: allowed_employees}
 
 sinks:
-  external: [send_email, http_post]                # data leaves the organisation here
+  external: [send_email, http_post, WebFetch]      # data leaves the organisation here
   detokenize: [charge_card, screen_sanctions]      # real values are put back only for these tools
+
+# Shell commands that send data out (Claude Code has no http_post: it runs curl in Bash). A matching command to a
+# host outside allow_hosts counts as an external sink, so flow.sensitive_to_external decides on it.
+egress:
+  tools: {Bash: command}                           # tool -> the argument that holds the shell command
+  patterns: ['\b(curl|wget|nc|ncat|scp|rsync|ftp)\b']
+  allow_hosts: [localhost, 127.0.0.1, pypi.org, files.pythonhosted.org]
+
+# Data classes (P2/DP30, issue #13), lowest first. Before any model or judge sees a message, it gets a class from a
+# trusted source: the tool that returned it (tools below; a tool not listed here is unclassified) or a restricted term
+# it names (barriers above), or for the data lake the named query that ran (datalake below). Tokenising identifiers never lowers it. Content above a destination's limit is withheld
+# with the neutral barrier message (action: redact) or stops the request (action: block). Limits: max_to_model for
+# every model, a model's own `max_class` below that, and `max_class` on injection.jev for the external judge. A tool
+# result that may reach the model but not Jev cannot be injection-checked, so that request is blocked.
+classification:
+  levels: [public, internal, P2, DP30]
+  max_to_model: P2
+  default: internal                  # user, system and assistant text that names no restricted term
+  action: redact
+  tools:
+    get_customer: internal           # card and IBAN are tokens by the time the model sees them
+    send_email: internal
+    charge_card: internal
+    get_client_file: P2              # client onboarding file (owners, documents, settlement account)
+    screen_sanctions: internal
+    search_documents: internal       # restricted deal documents in it are DP30 by their terms
+    list_files: internal
+    read_file: internal
+    run_tests: internal
+    http_post: internal
+    Read: internal
+    Glob: internal
+    Grep: internal
+    Edit: internal
+    Write: internal
+    Bash: internal
+    WebFetch: internal
+    TodoWrite: internal
+    get_employee: DP30               # personnel file: salary, health, manager notes. Never to any model or Jev
+    get_hr_policy: internal          # the synthetic sample HR handbook (fictional company rules)
+  # Tools not called at all while their results could not reach the current model (or Jev, while it is on): the record
+  # is never fetched for nothing, and the agent never holds it. Other tools are fetched and their results withheld.
+  block_calls_above_limit: [get_employee]
+
+# Data lake. The agent never writes a query: it names one from this catalog. A query the user's role may not run, or
+# whose result could not be sent on (to the model, and to Jev while the AI check is on), is refused before it runs,
+# with the same neutral reason in every case. Each result carries the lake's own class label; a missing label or one
+# that differs from the class here leaves the result unclassified, so it is withheld. A lower-class view of a dataset
+# exists only as a transformation listed here: the deal team's agent may see how many live deals each sector has
+# (groups under min_group suppressed), never the deals. The public side gets nothing from the pipeline: even a count
+# of pending deals is MNPI to them.
+datalake:
+  tool: query_datalake
+  argument: query
+  datasets:                                          # synthetic data: demo/datalake.py
+    fx_reference:     {class: public}
+    client_positions: {class: P2}
+    deal_pipeline:    {class: DP30}
+  transformations:
+    sector_counts:    {class: internal, from: deal_pipeline, count_by: sector, min_group: 3}
+  queries:
+    fx_rates:           {dataset: fx_reference,         roles: [onboarding_analyst, mna_banker]}
+    client_positions:   {dataset: client_positions,     roles: [onboarding_analyst]}
+    deal_pipeline:      {dataset: deal_pipeline,        roles: [mna_banker]}
+    pipeline_by_sector: {transformation: sector_counts, roles: [mna_banker]}

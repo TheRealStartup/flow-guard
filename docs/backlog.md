@@ -26,7 +26,8 @@ leaves this file.
 - **Risk score per session and user**, graduated responses (log → approval → slow down → stop), kill switch.
 
 ## Adapters (revisit D1)
-MCP gateway (FastMCP), Claude Code hook, Anthropic Messages API, OpenAI Responses API, streaming.
+MCP gateway (FastMCP), Claude Code hook (phase 2 of docs/claude-code.md), OpenAI Responses API, true streaming.
+Anthropic Messages API: built for Claude Code, see docs/claude-code.md.
 
 ## Reporting
 OWASP mapping per control, CSV export, anchoring the audit hash publicly (daily timestamp), policy replay (run a new rule against past traffic before switching it on).

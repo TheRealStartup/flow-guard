@@ -1,7 +1,9 @@
 """Semantic (AI-based) check through Jev, TypeSafe's decision model. API notes: docs/jev.md.
 
-Jev only ever sees text that has already been redacted: card numbers and secrets are
-tokens by the time we call it, so the guardrail does not leak what it protects.
+Jev is an external service, so whatever it receives leaves the bank. Cards, IBANs, IDs and secrets are tokens by the
+time we call it, but masking does not hide business facts. The engine therefore sends Jev only content at or below
+`injection.jev.max_class` (default internal); content above that is never checked here and its request is blocked
+(engine._class_gate, docs/decisions.md D6).
 """
 
 import hashlib

@@ -13,7 +13,7 @@ controls at the tool boundary; the two approaches can work together.
 | Point | AI Control Layer: current model proxy | MCP gateway |
 | --- | --- | --- |
 | Protects | Checks messages before they reach the model, replaces detected sensitive values with reversible tokens, marks tool results as data rather than instructions (spotlighting), and filters the model's proposed tool calls before returning them to the agent. | Checks actual tool requests before execution and can filter tool results before returning them to the agent. Model traffic needs separate protection. |
-| Integration | Point an agent using Chat Completions at `http://localhost:8000/v1`; send a bearer API key, `X-Purpose`, and a stable `X-Session`. The key maps to a user and agent in `policy/identities.yaml`. Works with ordinary function tools without migrating them to MCP. Streaming, Responses and Anthropic Messages are not supported yet. | Route protected tool access through MCP servers and the gateway. Model API choice is independent of that tool connection. |
+| Integration | Point an agent using Chat Completions at `http://localhost:8000/v1`; send a bearer API key, `X-Purpose`, and a stable `X-Session`. The key maps to a user and agent in `policy/identities.yaml`. Anthropic Messages (`/v1/messages`) works too: the unmodified Claude Code runs through the gateway with `ANTHROPIC_BASE_URL` (see [docs/claude-code.md](docs/claude-code.md)); its streamed answer is replayed after the check. Works with ordinary function tools without migrating them to MCP. The OpenAI Responses API and streaming on Chat Completions are not supported yet. | Route protected tool access through MCP servers and the gateway. Model API choice is independent of that tool connection. |
 | Audit action visibility | Records policy decisions about model requests and proposed tool calls, including user, session, policy version, reasons, timing and cumulative usage. Sees tool results only when the agent sends them in a later model request. | Can record actual tool invocations and returned results at the tool boundary, including calls made without consulting a model. Actions that bypass the gateway remain outside its visibility. |
 
 An allowed tool call in our audit log means the gateway permitted the proposal;
@@ -67,7 +67,7 @@ as `4111111111111111` to see reversible redaction. Other policy controls stay ac
 Outside Compose, the gateway still defaults to the real Jev judge and fails closed
 when its key is missing.
 
-Edit `policy/policy.yaml` or `policy/signatures.json` on the host to test live policy
+Edit `policy/policy.yaml` (every field documented in [docs/policy.md](docs/policy.md)) or `policy/signatures.json` on the host to test live policy
 changes. Audit history persists in a named Docker volume; session budgets and token
 vaults are in memory and reset when the gateway restarts. Ports bind to localhost.
 The dashboard shares the gateway's network namespace so its API proxy reaches the
