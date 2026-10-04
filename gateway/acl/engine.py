@@ -31,6 +31,34 @@ MARKER_RE = re.compile(r"<<(\s*/?\s*tool_data)", re.IGNORECASE)  # our marker, o
 SEVERITY = {"allow": 0, "flag": 1, "redact": 2, "block": 3}
 
 
+def threats_in(decisions: list[dict[str, Any]]) -> list[str]:
+    """The attacks an exchange defused, as opposed to routine data protection (masking an IBAN is not an attack).
+    A quarantined injection keeps the outcome "redacted" (the rest of the request went through), so the dashboard needs
+    this to show it as what it is: a stopped attack. A judge check that failed (no score) is not a detected attack."""
+    out = []
+    for d in decisions:
+        c, a = d.get("control"), d.get("action")
+        if a == "allow":
+            continue
+        if c == "injection.jev" and d.get("score") is not None and a in ("redact", "block"):
+            out.append("prompt injection")
+        elif c == "signatures" and a in ("redact", "block"):
+            out.append("known attack signature")
+        elif c == "spotlight":
+            out.append("fake data marker")
+        elif c == "flow.sensitive_to_external" and a == "block":
+            out.append("data exfiltration")
+    return out
+
+
+def with_threats(e: dict[str, Any]) -> dict[str, Any]:
+    """An audit entry as served to readers: older entries get `threats` computed from their decisions (the stored entry
+    is never changed, so the hash chain stays intact)."""
+    if e.get("type", "exchange") != "exchange" or "threats" in e:
+        return e
+    return {**e, "threats": threats_in(e.get("decisions") or [])}
+
+
 @dataclass
 class Decision:
     control: str
@@ -678,6 +706,7 @@ class Engine:
             "profile": ex.policy.profile,
             "policy_version": ex.policy.version,
             "outcome": outcome,
+            "threats": threats_in([asdict(d) for d in ex.decisions]),
             "decisions": [asdict(d) for d in ex.decisions],
             "tool_calls": ex.tool_calls,
             "spotlighted": ex.spotlighted,
@@ -741,7 +770,10 @@ class Engine:
         by_outcome: dict[str, int] = {}
         by_control: dict[str, dict[str, int]] = {}
         per_control_ms: dict[str, list[float]] = {}
+        threats: dict[str, int] = {}
         for e in ev:
+            for t in with_threats(e)["threats"]:
+                threats[t] = threats.get(t, 0) + 1
             by_outcome[e["outcome"]] = by_outcome.get(e["outcome"], 0) + 1
             for d in e["decisions"]:
                 by_control.setdefault(d["control"], {}).setdefault(d["action"], 0)
@@ -761,6 +793,7 @@ class Engine:
             "policy_error": self.policies.last_error,
             "requests": len(ev),
             "by_outcome": by_outcome,
+            "threats": threats,  # attacks defused, by kind (a quarantine counts here although its outcome is "redacted")
             "by_control": by_control,
             "spotlighted": sum(e.get("spotlighted", 0) for e in ev),
             "latency_ms": {

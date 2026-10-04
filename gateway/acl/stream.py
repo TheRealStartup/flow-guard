@@ -51,14 +51,15 @@ def sse(data: Any, event: str | None = None, id: int | None = None) -> str:
 
 
 async def audit_stream(audit: AuditLog, after: int | None, is_disconnected: Callable[[], Any],
-                       policy_view: Callable[[], dict[str, Any]], poll_policy: Callable[[], Any]) -> AsyncIterator[str]:
+                       policy_view: Callable[[], dict[str, Any]], poll_policy: Callable[[], Any],
+                       view: Callable[[dict[str, Any]], dict[str, Any]] = lambda e: e) -> AsyncIterator[str]:
     """`event: audit` per entry (the same JSON as /api/events items), `event: policy` after each policy_change."""
     sub = Subscriber(asyncio.get_running_loop())
     backlog = audit.subscribe(sub.push, after)
     try:
         yield f"retry: {RETRY_MS}\n\n"
         for e in backlog:
-            yield sse(e, "audit", e["seq"])
+            yield sse(view(e), "audit", e["seq"])
         last = time.monotonic()
         policy_changed = any(e.get("type") == "policy_change" for e in backlog)
         while True:
@@ -79,7 +80,7 @@ async def audit_stream(audit: AuditLog, after: int | None, is_disconnected: Call
                 return
             last = time.monotonic()
             policy_changed = e.get("type") == "policy_change"
-            yield sse(e, "audit", e["seq"])
+            yield sse(view(e), "audit", e["seq"])
     finally:
         sub.closed = True
         audit.unsubscribe(sub.push)

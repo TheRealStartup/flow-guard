@@ -20,6 +20,7 @@ const RANGES = [
 
 const OUTCOMES = [
   { value: "", label: "All outcomes" },
+  { value: "attack", label: "Attack defused" },
   { value: "blocked", label: "Blocked" },
   { value: "redacted", label: "Redacted" },
   { value: "flagged", label: "Flagged" },
@@ -89,7 +90,9 @@ export function AuditTrail() {
     const q = query.trim().toLowerCase();
     return inRange.filter((e) => {
       if (frozenAt !== null && e.seq > frozenAt) return false;
-      if (outcome === "policy_change" ? e.type !== "policy_change" : outcome && (e.type !== "exchange" || e.outcome !== outcome)) return false;
+      if (outcome === "attack") {
+        if (e.type !== "exchange" || !e.threats?.length) return false;
+      } else if (outcome === "policy_change" ? e.type !== "policy_change" : outcome && (e.type !== "exchange" || e.outcome !== outcome)) return false;
       if (action && !actionsOf(e).includes(action)) return false;
       if (agent && (e.type !== "exchange" || e.agent !== agent)) return false;
       if (user && (e.type !== "exchange" || e.user !== user)) return false;
@@ -150,7 +153,12 @@ export function AuditTrail() {
 
       <StatRow>
         <Stat label="Total events" value={exchanges.length} unit={range === "all" ? "all time" : rangeLabel} note={`Across ${agents.length} active agent${agents.length === 1 ? "" : "s"}`} />
-        <Stat label="Blocked" value={count("blocked")} tone="block" note="Stopped by policy controls" />
+        <Stat
+          label="Attacks defused"
+          value={exchanges.filter((e) => e.threats?.length).length}
+          tone="block"
+          note={`Injections quarantined, exfiltrations stopped · ${count("blocked")} requests blocked in total`}
+        />
         <Stat label="Redacted" value={count("redacted")} tone="redact" note="Sensitive values hidden from the model" />
         <Stat label="Flagged" value={count("flagged")} tone="flag" note="Let through, recorded for review" />
       </StatRow>
@@ -256,7 +264,7 @@ export function AuditTrail() {
                     <td className="truncate py-3 pr-3 font-mono text-sm">{e.type === "exchange" ? (e.user ?? "—") : "—"}</td>
                     <td className="py-3">
                       {e.type === "exchange" ? (
-                        <OutcomePill outcome={e.outcome} />
+                        e.threats?.length ? <Pill tone="block">Attack defused</Pill> : <OutcomePill outcome={e.outcome} />
                       ) : (
                         <Pill tone={e.error ? "block" : "neutral"}>{e.error ? "Rejected" : "Policy"}</Pill>
                       )}

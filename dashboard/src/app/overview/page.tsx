@@ -150,9 +150,15 @@ function Tiles({ o }: { o: Overview }) {
   return (
     <div className="mb-6 grid grid-cols-2 overflow-hidden rounded-lg border bg-card xl:grid-cols-4 xl:divide-x">
       <Tile label="Requests checked" value={compact(now.requests)} note={`${o.actors.length} users · ${o.agents} agents`} sub={delta(now.requests, before.requests)} trend={<Sparkline values={o.sparkline} />} />
-      <Tile label="Blocked" mark="var(--block)" value={compact(now.counts.blocked)} note={`${pct(now.counts.blocked)} of requests · ${now.flowBlocks} at the outbound check`} sub={delta(now.counts.blocked, before.counts.blocked)} />
       <Tile
-        label="Hidden from the model"
+        label="Attacks stopped"
+        mark="var(--block)"
+        value={compact(now.attacks)}
+        note={Object.entries(now.attackKinds).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(" · ") || "none in this range"}
+        sub={`${now.counts.blocked} requests blocked (${pct(now.counts.blocked)}) · ${delta(now.attacks, before.attacks)}`}
+      />
+      <Tile
+        label="Data protected"
         mark="var(--redact)"
         value={compact(now.hidden)}
         note={`values tokenized · ${now.quarantined} messages quarantined`}
@@ -247,28 +253,28 @@ function TableToggle({ o }: { o: Overview }) {
 function RecentBlocks({ o }: { o: Overview }) {
   return (
     <Panel className="flex flex-col">
-      <PanelHeader title="Latest blocks" count={o.now.counts.blocked} />
+      <PanelHeader title="Latest attacks and blocks" count={o.recentBlocks.length} />
       <ul className="flex-1 divide-y">
         {o.recentBlocks.map((e) => {
-          const d = e.decisions.find((x) => x.action === "block");
+          const d = e.decisions.find((x) => x.action === "block") ?? e.decisions.find((x) => x.control === "injection.jev" && x.action === "redact");
           return (
             <li key={e.seq}>
               <Link href={`/audit?q=${eventId(e)}`} className="flex gap-3 px-6 py-3 hover:bg-selected/60">
                 <span className="mt-1.5 size-2 shrink-0 rounded-full bg-block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="truncate font-medium">{d ? controlName(d.control) : "Blocked"}</span>
+                    <span className="truncate font-medium">{e.threats?.length ? `Attack defused · ${e.threats[0]}` : d ? controlName(d.control) : "Blocked"}</span>
                     <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{utcTime(e.ts, false)}</span>
                   </div>
                   <div className="truncate text-sm text-muted-foreground" title={d?.reason}>
-                    {e.user ?? NO_IDENTITY} · {d ? `${blockTitle(d)} · ${d.reason}` : eventTitle(e).title}
+                    {e.user ?? NO_IDENTITY} · {d ? `${d.action === "block" ? blockTitle(d) : "Quarantined, the rest went through"} · ${d.reason}` : eventTitle(e).title}
                   </div>
                 </div>
               </Link>
             </li>
           );
         })}
-        {!o.recentBlocks.length && <li className="px-6 py-10 text-center text-muted-foreground">Nothing blocked in this range.</li>}
+        {!o.recentBlocks.length && <li className="px-6 py-10 text-center text-muted-foreground">No attacks or blocks in this range.</li>}
       </ul>
       <Link href="/audit" className="flex items-center gap-2 border-t px-6 py-3 text-sm text-muted-foreground hover:text-foreground">
         All blocked events in the audit trail <ArrowRight className="size-4" />

@@ -35,8 +35,12 @@ function summarise(ex: ExchangeEvent[]) {
   let quarantined = 0;
   let released = 0;
   let flowBlocks = 0;
+  let attacks = 0;
+  const attackKinds: Record<string, number> = {};
   for (const e of ex) {
     counts[e.outcome]++;
+    if (e.threats?.length) attacks++;
+    for (const t of new Set(e.threats ?? [])) attackKinds[t] = (attackKinds[t] ?? 0) + 1;
     for (const d of e.decisions) {
       if (d.action === "redact" && VALUE_CONTROLS.has(d.control)) hidden++;
       if ((d.control === JUDGE && d.action !== "allow" && d.action !== "flag") || (d.control === "barrier.mnpi" && d.action === "redact")) quarantined++;
@@ -44,7 +48,7 @@ function summarise(ex: ExchangeEvent[]) {
       if (d.control.startsWith("flow.") && d.action === "block") flowBlocks++;
     }
   }
-  return { requests: ex.length, counts, hidden, quarantined, released, flowBlocks };
+  return { requests: ex.length, counts, hidden, quarantined, released, flowBlocks, attacks, attackKinds };
 }
 
 export function computeOverview(events: AuditEvent[], range: RangeKey, now: number) {
@@ -123,7 +127,11 @@ export function computeOverview(events: AuditEvent[], range: RangeKey, now: numb
     },
     actors: [...actors.values()].sort((a, b) => b.blocked - a.blocked || b.requests - a.requests),
     agents: new Set(ex.map((e) => e.agent).filter(Boolean)).size,
-    recentBlocks: ex.filter((e) => e.outcome === "blocked").slice(-6).reverse(),
+    // Newest first whatever order the feed delivers: stopped attacks and blocks.
+    recentBlocks: ex
+      .filter((e) => e.outcome === "blocked" || e.threats?.length)
+      .sort((a, b) => b.seq - a.seq)
+      .slice(0, 6),
     sparkline: buckets.slice(-12).map((b) => b.total),
   };
 }

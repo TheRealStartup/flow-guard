@@ -41,6 +41,9 @@ export type ExchangeEvent = {
   profile: string;
   policy_version: string;
   outcome: Outcome;
+  // Attacks this exchange defused (prompt injection, known attack signature, fake data marker, data exfiltration).
+  // A quarantined injection keeps the outcome "redacted", so this is what marks it as a stopped attack.
+  threats?: string[];
   decisions: Decision[];
   tool_calls?: ToolCall[];
   spotlighted?: number;
