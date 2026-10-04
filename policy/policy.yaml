@@ -42,6 +42,10 @@ controls:
     on_error: block
     max_class: P2        # Jev (api.typesafe.ai) is an outside processor like the model vendor, approved to the same
                          # class: whatever the model may read, Jev may check. DP30 reaches neither (see classification)
+  leak.fingerprint:   # the bank's own confidential documents and secrets, registered as keyed fingerprints only (EXPERIMENTAL)
+    action: block     # block an outgoing call once this share of a document has left (per person, per day)
+    threshold: 0.25   # smaller pieces are let through and recorded, and they add up across calls
+    registry: protected.json   # built with `just protect`; holds fingerprints, never the text
   spotlight:          # tool results reach the model inside <<tool_data id=…>> markers + a note: data, not instructions
     action: flag      # if tool data fakes our marker to break out of the block: flag | block (it is escaped either way)
     mode: delimit     # delimit | off

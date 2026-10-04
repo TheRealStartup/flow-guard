@@ -14,8 +14,10 @@ import re
 import statistics
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
+from .detectors.fingerprint import Registry, load_key
 from .detectors.jev import Judge
 from .detectors.patterns import find_sensitive
 from .policy import PURPOSE_WITHHELD, Policy, PolicyStore, fold
@@ -48,6 +50,8 @@ def threats_in(decisions: list[dict[str, Any]]) -> list[str]:
             out.append("fake data marker")
         elif c == "flow.sensitive_to_external" and a == "block":
             out.append("data exfiltration")
+        elif c == "leak.fingerprint" and a == "block":
+            out.append("confidential document leak")
     return out
 
 
@@ -70,6 +74,8 @@ class Decision:
     excerpt: str | None = None  # the text that triggered it, always masked; see safe_excerpt()
     token: str | None = None  # the reversible token a redaction put in place of the value (never the value)
     source: str | None = None  # where the text came from, e.g. "read_file README.md" (tool results only)
+    subject: str | None = None  # leak.fingerprint: which registered document or secret, e.g. "document:falcon-memo"
+    matched: list[str] | None = None  # leak.fingerprint: its keyed fingerprints in this call (never the text)
 
 
 @dataclass
@@ -162,6 +168,10 @@ class Engine:
         # Per person per day (UTC): {(user, "2026-10-04"): {"tokens": .., "cost_usd": ..}}. Rebuilt from the audit log on
         # start, so a restart does not hand everyone a fresh daily budget.
         self.daily: dict[tuple[str, str], dict[str, float]] = {}
+        # Per person, day and registered document/secret: the fingerprints that have already left (leak.fingerprint).
+        self.exposure: dict[tuple[str, str, str], set[str]] = {}
+        self._registry_cache: tuple[Path, float, Registry] | None = None
+        self.fp_key = load_key(audit.path.parent / "fingerprint.key")
         self._rebuild_daily()
 
     @staticmethod
@@ -173,10 +183,54 @@ class Engine:
         for e in self.audit.events:
             if e.get("type") == "exchange" and e.get("user") and e.get("session"):
                 last[e["session"]] = (e["user"], self._today(e.get("ts")), e.get("usage") or {})
+        for e in self.audit.events:  # what already left today counts after a restart too
+            for d in e.get("decisions") or []:
+                if d.get("control") == "leak.fingerprint" and d.get("action") != "block" and d.get("subject") and e.get("user"):
+                    key = (e["user"], self._today(e.get("ts")), d["subject"])
+                    self.exposure.setdefault(key, set()).update(d.get("matched") or [])
         for user, day, u in last.values():
             d = self.daily.setdefault((user, day), {"tokens": 0, "cost_usd": 0.0})
             d["tokens"] += int(u.get("tokens") or 0)
             d["cost_usd"] += float(u.get("cost_usd") or 0.0)
+
+    def _registry(self, p: Policy) -> Registry | None:
+        name = p.control("leak.fingerprint").get("registry")
+        path = self.policies.path.parent / name if name else None
+        if not path or not path.exists():
+            return None
+        mtime = path.stat().st_mtime
+        if not self._registry_cache or self._registry_cache[:2] != (path, mtime):
+            self._registry_cache = (path, mtime, Registry.load(path))
+        return self._registry_cache[2]
+
+    def _leak_check(self, p: Policy, s: Session, args: str, where: str, via: str) -> tuple[list[Decision], list]:
+        """Registered documents and secrets in an outgoing call, added up over the person's day: a document leaking
+        in many small pieces is stopped once the share that left reaches the threshold. Returns the decisions and the
+        exposure to add if the call is not blocked. The leaked text itself is never logged, only keyed fingerprints."""
+        reg = self._registry(p)
+        if reg is None:
+            return [], []
+        docs, secs = reg.match(args, self.fp_key)
+        threshold = float(p.control("leak.fingerprint").get("threshold", 0.25))
+        out, updates, day = [], [], self._today()
+        for kind, hits, table in (("document", docs, reg.documents), ("secret", secs, reg.secrets)):
+            for sid, hit in hits.items():
+                key = (s.user, day, f"{kind}:{sid}")
+                before = self.exposure.get(key, set())
+                after = before | hit
+                total = len(table[sid]["fingerprints"] if kind == "document" else table[sid]["windows"])
+                share = len(after) / total if total else 1.0
+                over = share >= threshold if kind == "document" else len(after) >= table[sid]["needed"]
+                action = p.action("leak.fingerprint") if over else "flag"
+                what = f"{table[sid]['title']} ({kind})"
+                reason = (f"{what}: {share:.0%} of it would have left today via {via} across this person's calls "
+                          f"(limit {threshold:.0%})" if kind == "document" else f"{what}: enough of it to rebuild it would leave via {via}")
+                if not over:
+                    reason = f"{what}: {share:.0%} of it has left today; let through and recorded (limit {threshold:.0%})"
+                out.append(Decision("leak.fingerprint", action, where, reason, excerpt="[protected content: not logged]",
+                                    subject=f"{kind}:{sid}", matched=sorted(hit)))
+                updates.append((key, after))
+        return out, updates
 
     def daily_used(self, user: str) -> dict[str, float]:
         return self.daily.get((user, self._today()), {"tokens": 0, "cost_usd": 0.0})
@@ -652,12 +706,22 @@ class Engine:
                         what = sorted(carried) if carried else sorted(s.labels)
                         ds.append(Decision("flow.sensitive_to_external", p.action("flow.sensitive_to_external"), where,
                                            f"{'/'.join(what)} data would leave the organisation via {via} (mode={mode})"))
+                leak_updates = []
+                if (name in p.sinks("external") or outside is not None) and p.action("leak.fingerprint") != "allow":
+                    via = f"{name} ({', '.join(outside) or 'unknown host'})" if outside is not None else name
+                    leaks, leak_updates = self._leak_check(p, s, args, where, via)
+                    ds += leaks
                 budget = p.budget_for(s.user).get("max_tool_calls")
                 if budget is not None and s.tool_calls + 1 > budget and p.action("budget") != "allow":
                     ds.append(Decision("budget", p.action("budget"), where, f"tool-call budget {budget} exhausted"))
-                ex.decisions += _with_excerpt(ds, f"{name}({args})")
+                protected = any(d.control == "leak.fingerprint" for d in ds)  # never log the protected text itself
+                ex.decisions += _with_excerpt(ds, f"{name}([protected content: not logged])" if protected else f"{name}({args})")
                 block = next((d for d in ds if d.action == "block"), None)
-                call = {"name": name, "arguments": safe_excerpt(args, width=300), "outcome": "allowed", "control": None}
+                if not block:  # only what really leaves counts towards the share
+                    for key, after in leak_updates:
+                        self.exposure[key] = after
+                call = {"name": name, "arguments": "[protected content: not logged]" if protected else safe_excerpt(args, width=300),
+                        "outcome": "allowed", "control": None}
                 ex.tool_calls.append(call)
                 if block:
                     call.update(outcome="blocked", control=block.control, reason=block.reason)
