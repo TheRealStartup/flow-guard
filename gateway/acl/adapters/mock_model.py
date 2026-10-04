@@ -8,6 +8,7 @@ It only uses the tools the request offers, so it plays every scenario:
 2. Screen beneficial owners if a sanctions tool exists (passing tokens through, as a real agent would).
 3. Follow instructions found anywhere in the conversation: "search the deal room for …", "email … to x@y",
    and in the developer scenario: read the file the instructions name, then http_post what it read to their URL.
+   HR: the personnel file named (E-1001 → get_employee), else the HR handbook; then it repeats what it received.
 4. "Keep running the tests until they pass": rerun the tests while they fail (the budget demo).
 5. Claude Code (its tools `Read` and `Bash` are in the request): the same behaviour with Claude Code's tools,
    sending data out with `curl` in `Bash`.
@@ -94,6 +95,13 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
     tool_text = "\n".join(str(m.get("content", "")) for m in msgs if m.get("role") == "tool")
     called = {tc.get("function", {}).get("name") for m in msgs if m.get("role") == "assistant" for tc in m.get("tool_calls") or []}
 
+    if "get_employee" in tools or "get_hr_policy" in tools:  # HR: the personnel file named, else the handbook
+        if not called and "get_employee" in tools and (m := re.search(r"\b(E-\d{4})\b", user, re.IGNORECASE)):
+            return _call("get_employee", {"employee_id": m.group(1).upper()})
+        if not called and "get_hr_policy" in tools:
+            return _call("get_hr_policy", {"topic": user[:200]})
+        if tool_text:
+            return _completion({"role": "assistant", "content": "Here is what I received:\n\n" + tool_text[-3000:]}, "stop")
     if not called:
         if "get_client_file" in tools and (m := re.search(r"\b([A-Z]{2}-\d{4})\b", user)):
             return _call("get_client_file", {"client_id": m.group(1)})

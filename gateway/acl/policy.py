@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,43 @@ class Signature:
     ref: str = ""
 
 
+PURPOSE_ACTIONS = ("allow", "flag", "block")  # redact makes no sense for a request that should not be made at all
+PURPOSE_WITHHELD = "[WITHHELD: purpose not recorded]"  # what reports show instead of a redact_purpose role's X-Purpose
+INVISIBLE_RE = re.compile("[­​-‏⁠-⁤﻿]")  # soft hyphen, zero-width characters
+
+
+def fold(text: str) -> str:
+    """Text as the purpose rules compare it: NFKC (full-width and ligature look-alikes become plain letters), invisible
+    characters removed, case-folded. Look-alikes from other scripts (a Cyrillic "а") are not mapped: regexes are not
+    a semantic guarantee (docs/decisions.md D8)."""
+    return INVISIBLE_RE.sub("", unicodedata.normalize("NFKC", text)).casefold()
+
+
+def compact(purpose: str) -> str:
+    """"Performance Review", "performance-review" and "performance_review" all compare as "performancereview"."""
+    return re.sub(r"[\W_]+", "", fold(purpose))
+
+
+@dataclass
+class PurposeRule:
+    """`access.purpose` (docs/decisions.md D8): for the listed roles, some purposes may not be pursued with a model at
+    all, whatever the data. `forbidden` is matched against the stated purpose (X-Purpose); `signatures` against the
+    request text, so a benign-sounding header does not carry a forbidden request through."""
+
+    id: str
+    roles: list[str]
+    forbidden: list[str]  # compacted, see compact()
+    signatures: list[Signature]
+    message: str
+
+    def applies_to(self, role: str) -> bool:
+        return "*" in self.roles or role in self.roles
+
+    def forbidden_purpose(self, purpose: str | None) -> str | None:
+        got = compact(purpose or "")
+        return next((f for f in self.forbidden if f in got), None)
+
+
 @dataclass
 class Policy:
     raw: dict[str, Any]
@@ -35,6 +73,7 @@ class Policy:
     controls: dict[str, dict[str, Any]]
     signatures: list[Signature] = field(default_factory=list)
     identities: dict[str, dict[str, str]] = field(default_factory=dict)  # key sha256 -> {user, agent}
+    purpose_rules: list[PurposeRule] = field(default_factory=list)
 
     @property
     def identity(self) -> dict[str, Any]:
@@ -91,6 +130,12 @@ class Policy:
 
     def role_of(self, user: str) -> str:
         return self.raw.get("users", {}).get(user, {}).get("role", "default")
+
+    def reported_purpose(self, user: str | None, purpose: str | None) -> str | None:
+        """The purpose as audit, events, export and the session API show it (D8). Roles with `redact_purpose: true`
+        (HR) get a fixed placeholder: the raw X-Purpose stays in memory for the checks only."""
+        role = self.raw.get("roles", {}).get(self.role_of(user)) if user else None
+        return PURPOSE_WITHHELD if purpose and (role or {}).get("redact_purpose") else purpose
 
     def allowed_tools(self, user: str) -> list[str]:
         roles = self.raw.get("roles", {})
@@ -173,6 +218,22 @@ class Policy:
         """What an external judge may receive: its own `max_class`, never above `max_to_model`. No max_class: nothing."""
         return min(self.max_to_model, self._limit(self.control(cid).get("max_class")))
 
+    def call_gate(self, tool: str, model: str) -> tuple[str, str] | None:
+        """For tools in `classification.block_calls_above_limit`: (result class, limit) if what the tool returns could
+        not be shown to `model` (or, while the injection check is on, to Jev), so the call is not made at all and the
+        record is never fetched. None if the call may go ahead. Other tools are fetched and their results withheld."""
+        if tool not in (self.classification.get("block_calls_above_limit") or []):
+            return None
+        limit = self.model_limit(model)
+        if self.action("injection.jev") != "allow":
+            limit = min(limit, self.judge_limit())
+        cls = self.rank(self.tool_class(tool))
+        return (self.level(cls), self.level(limit) if limit >= 0 else "no limit set (fail closed)") if cls > limit else None
+
+    def purpose_rules_for(self, user: str) -> list[PurposeRule]:
+        role = self.role_of(user)
+        return [r for r in self.purpose_rules if r.applies_to(role)]
+
     def egress(self, tool: str, args: str) -> list[str] | None:
         """Outside hosts a shell-command tool call would send data to (e.g. Claude Code's `Bash: curl ...`), or None
         if the call is not an outbound command. An outbound command with no recognisable host counts as outside."""
@@ -231,6 +292,52 @@ def _check_classes(raw: dict[str, Any], controls: dict[str, dict]) -> None:
             raise ValueError(f"datalake.queries.{name}: needs exactly one of dataset or transformation")
         if ("dataset" in q and q["dataset"] not in datasets) or ("transformation" in q and q["transformation"] not in transforms):
             raise ValueError(f"datalake.queries.{name}: refers to an unknown dataset or transformation")
+    gated = c.get("block_calls_above_limit") or []
+    if not isinstance(gated, list) or not all(isinstance(t, str) for t in gated):
+        raise ValueError("classification.block_calls_above_limit must be a list of tool names")
+
+
+def _str_list(v: Any, where: str, *, empty: bool = False) -> list[str]:
+    if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v) or (not v and not empty):
+        raise ValueError(f"{where} must be a {'' if empty else 'non-empty '}list of non-empty strings")
+    return v
+
+
+def _purpose_rules(controls: dict[str, dict]) -> list[PurposeRule]:
+    """Compile `access.purpose`. A malformed rule or a broken regex is rejected, so the last good policy (and its rules)
+    stays active instead of a rule silently matching nothing."""
+    c = controls.get("access.purpose")
+    if c is None:
+        return []
+    if c.get("action", "allow") not in PURPOSE_ACTIONS:
+        raise ValueError(f"control access.purpose: action must be one of {PURPOSE_ACTIONS}")
+    rules = c.get("rules")
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("control access.purpose: rules must be a non-empty list")
+    out: list[PurposeRule] = []
+    for i, r in enumerate(rules):
+        if not isinstance(r, dict) or not isinstance(r.get("id"), str) or not r["id"].strip():
+            raise ValueError(f"access.purpose.rules[{i}] must be a mapping with an id")
+        where = f"access.purpose.rules.{r['id']}"
+        roles = _str_list(r.get("roles"), f"{where}.roles")
+        forbidden = [compact(f) for f in _str_list(r.get("forbidden", []), f"{where}.forbidden", empty=True)]
+        if not all(forbidden):
+            raise ValueError(f"{where}.forbidden: every purpose needs at least one letter or digit")
+        sigs: list[Signature] = []
+        for j, s in enumerate(r.get("signatures") or []):
+            if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not isinstance(s.get("pattern"), str):
+                raise ValueError(f"{where}.signatures[{j}] must be a mapping with an id and a pattern")
+            try:
+                pat = re.compile(s["pattern"], re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"{where}.signatures.{s['id']}: bad pattern ({e})") from e
+            if pat.search(""):
+                raise ValueError(f"{where}.signatures.{s['id']}: pattern matches empty text (would block everything)")
+            sigs.append(Signature(s["id"], pat, ["prompt"], s.get("ref", "")))
+        if not forbidden and not sigs:
+            raise ValueError(f"{where}: needs forbidden purposes, signatures, or both")
+        out.append(PurposeRule(r["id"], roles, forbidden, sigs, str(r.get("message", "this purpose is not allowed"))))
+    return out
 
 
 def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None) -> Policy:
@@ -249,6 +356,10 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
     for pat in (raw.get("egress") or {}).get("patterns", []):
         re.compile(pat)  # a broken pattern is rejected here, so the last good policy stays active
     _check_classes(raw, controls)
+    purpose_rules = _purpose_rules(controls)
+    for name, r in (raw.get("roles") or {}).items():
+        if "redact_purpose" in (r or {}) and not isinstance(r["redact_purpose"], bool):
+            raise ValueError(f"roles.{name}.redact_purpose must be true or false")  # a typo must not log raw purposes
 
     sigs: list[Signature] = []
     if sig_text is not None:
@@ -261,7 +372,7 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
                                                 **({"purpose": str(i["purpose"])} if i.get("purpose") else {})}
 
     digest = hashlib.sha256(text.encode() + (sig_text or "").encode() + (keys_text or "").encode()).hexdigest()[:8]
-    return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents)
+    return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents, purpose_rules)
 
 
 def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
@@ -279,7 +390,7 @@ def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
         for k in sorted(set(a) | set(b)):
             if a.get(k) != b.get(k):
                 out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
-    for key in ("budgets", "models", "users", "roles", "sinks", "egress", "classification", "datalake", "barriers", "identity"):
+    for key in ("budgets", "models", "users", "roles", "scopes", "sinks", "egress", "classification", "datalake", "barriers", "identity"):
         if old.raw.get(key) != new.raw.get(key):
             out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
     if [x.id for x in old.signatures] != [x.id for x in new.signatures]:

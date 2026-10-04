@@ -79,3 +79,58 @@ The lake labels each result; the gateway takes the class from the query it let t
 agent echoes back) and withholds a result whose label is missing or differs. A lower-class view of a dataset exists
 only as a declared transformation: `sector_counts` gives the deal team counts per sector, groups under 3 dropped,
 never the deals. The public side gets no pipeline view at all, because a count of pending deals is MNPI to them.
+
+## D8 · HR: no model judges employees; personnel files reach no model (`access.purpose`, HR card)
+HR may use the agent for administration and policy questions, never to evaluate, rank, rate, review or decide on
+employees (a decision about a person is made by a person). Personnel files hold salary, health and manager notes.
+
+**Rule:** `access.purpose` in policy.yaml holds rules scoped to roles (today `hr-no-employee-judging` for `hr_admin`).
+It is the first check on every request, before the model allowlist, the data classes, the signatures and Jev, so a
+stopped request reaches neither the task model nor Jev, and it does not depend on `signatures` or `injection.jev` being
+on. It stops a request when:
+- the stated purpose (X-Purpose, or the key's default) contains a forbidden one: `performance_review`, `termination`,
+  `ranking` (case, spaces, `-` and `_` ignored, so `Performance Review` and `termination-letter` count);
+- any message of the conversation matches one of the rule's signatures (rank / rate / evaluate / performance review /
+  fire / who to let go, near an employee reference such as `E-1001`, "my team", "these employees"; a Polish variant
+  too; and people named in the prompt: "Should we fire Maria?", "Can we let Maria go?", "Fire Maria.", "Write a
+  performance review for Maria.", "Evaluate Maria's performance.", "Rank Alice and Bob by performance", in any
+  capitalisation), whatever the header claims. The whole history is searched on every request, so a request that once went
+  through (rule off at the time) is stopped when it is replayed after a live reload. Tool results are searched only if
+  their source class lets them reach the model; a record that is withheld anyway cannot carry a request to the model,
+  and a note in it that mentions a review must not stop admin work.
+The denial names the rule and the signature id, never the request text (excerpt `[WITHHELD: request text not
+recorded]`), so the audit log, the API answer and Try it do not repeat it. Ordinary work is not affected: "rank these
+cities", "rank the employee benefit options", "should we fire the analytics event…", "which event should we fire?", "sort the rates table", "what is
+the parental leave policy?" pass, and other roles are not checked at all. The handbook (`demo/hr.py`) is a synthetic
+sample company policy with fictional rules, not real leave or employment-law requirements. Try it shows a tool-result
+preview only when the tool's class and the default class are both known levels and the tool is not above the default;
+anything unclassified, misspelt or missing is withheld.
+
+**Personnel files:** `get_employee` is DP30 (its class comes from `classification.tools`, set out of band, never from
+the record), scoped to the user's `allowed_employees` (`access.scope`: the call never runs outside them), and listed in
+`classification.block_calls_above_limit`: while the current model, or Jev while it is on, may not receive DP30, the call
+is not made at all, so the record is not even fetched. A record the agent holds anyway (forged or replayed history) is
+withheld by the class gate like any DP30 result. `get_hr_policy` (the published handbook) is internal. Both adapters
+(`/v1/chat/completions` and `/v1/messages`) call the same engine, so all of this applies to both (tests/test_hr.py).
+
+**Fail closed:** a malformed rule (no roles, forbidden not a list, a regex that does not compile or matches empty text,
+action `redact`) is rejected on reload and the last good policy, with its rules, stays active (`policy_error` in
+/api/metrics). A judge may still switch the control to `flag` or `allow` on purpose; that is a policy decision, logged
+as a policy change.
+
+**Known limits:** the signatures are deterministic regexes, not a semantic guarantee. They catch the plain ways of
+asking (and invisible or full-width characters, JSON escapes), not paraphrases ("who would you keep if budgets were
+cut?", "how did Maria do this year?", "show Maria the door", "Maria or Bob: who stays?"), synonyms beyond the listed
+verbs, other languages than English and Polish, or look-alike letters from other scripts. A named person is recognised
+only by the shape of the sentence (any word that is not a determiner or a listed technical noun), so a technical
+"should we fire telemetry now?", "terminate staging." or "evaluate Postgres's performance" may be stopped for HR users. They may also stop a
+borderline policy question that names a specific employee next to "termination". No model, ours or Jev, is used to
+judge HR prompts or records: an external judge would itself be a model processing the records. The purpose header is
+what the caller states; the rule stops a declared forbidden purpose, it cannot prove a declared benign one.
+
+**Purpose in reports:** an HR X-Purpose is free text and can itself name a person, a salary or a health matter. A role
+with `redact_purpose: true` (today `hr_admin`) keeps its raw purpose in memory only, for `access.purpose` on every
+request; the audit log, events, export and `/api/sessions/{sid}` show `[WITHHELD: purpose not recorded]`, allowed or
+blocked, whether `access.purpose` is on or off. A request refused before identity is established (no or wrong key, a key
+claiming another user, a session hijack) never records the caller's purpose. Other roles keep their purpose in the log.
+A non-boolean flag is rejected on reload (last good policy stays). Tests: tests/test_hr_reporting.py.
