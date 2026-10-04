@@ -539,8 +539,9 @@ def test_dashboard_adds_and_removes_an_approved_model_keeping_the_comments(gw):
     assert gw.client.post("/api/policy/models", json={"model": "x/y", "upstream": "mock"}).status_code == 400
     assert gw.client.delete("/api/policy/models/mistralai/mistral-small-3.2").status_code == 200
     assert gw.policy_path.read_text() == before
-    assert gw.client.delete("/api/policy/models/qwen3:4b").status_code == 200  # a name with a colon
-    assert "qwen3:4b" not in gw.client.get("/api/policy/details").json()["models"]
+    assert gw.client.post("/api/policy/models", json={"model": "vendor/model:8b"}).status_code == 200
+    assert gw.client.delete("/api/policy/models/vendor/model:8b").status_code == 200  # a name with a colon
+    assert "vendor/model:8b" not in gw.client.get("/api/policy/details").json()["models"]
 
 
 def test_metrics_report_each_session_against_its_own_role_budget(gw):

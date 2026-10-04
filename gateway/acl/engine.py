@@ -602,8 +602,7 @@ class Engine:
         day = self.daily.setdefault((s.user, self._today()), {"tokens": 0, "cost_usd": 0.0})
         day["tokens"] += tokens
         day["cost_usd"] += cost
-        if mcfg.get("upstream") == "ollama":
-            s.compute_s += upstream_ms / 1000
+        s.compute_s += upstream_ms / 1000  # model time: how long this session kept a model busy
 
         for choice in resp.get("choices", []):
             msg = choice.get("message") or {}

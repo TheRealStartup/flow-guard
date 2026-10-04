@@ -23,7 +23,7 @@ SUPPORTED_ACTIONS: dict[str, tuple[str, ...]] = {
     "models.allowlist": GATE, "budget": GATE, "access.tools": GATE, "access.scope": GATE, "access.datalake": GATE,
     "access.purpose": GATE, "flow.sensitive_to_external": GATE, "spotlight": GATE,
 }
-UPSTREAMS = ("openrouter", "ollama")  # where a model added from the dashboard may run (mock is for tests and the demo only)
+UPSTREAMS = ("openrouter",)  # where a model added from the dashboard may run (mock is for tests and the demo only)
 MODEL_NAME = re.compile(r"^[\w.:/@+-]{1,100}$")
 SPOTLIGHT_MODES = ("delimit", "off")
 # Hosts in a shell command: URLs (scheme://host), user@host: (scp/rsync), and bare host names / IPs.

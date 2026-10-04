@@ -50,7 +50,7 @@ class ActionRequest(BaseModel):
 
 class ModelRequest(BaseModel):
     model: str
-    upstream: str = "openrouter"  # openrouter | ollama
+    upstream: str = "openrouter"
     max_class: str | None = None  # highest data class it may receive; default: the lowest (classification.default)
 
 

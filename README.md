@@ -113,16 +113,7 @@ Recreate services after changing `.env`:
 docker compose up -d --wait
 ```
 
-For a local Ollama model, set `ACL_MODEL=qwen3:4b` and run:
-
-```sh
-docker compose --profile ollama up --build -d --wait
-docker compose exec ollama ollama pull qwen3:4b
-```
-
-Ollama runs on CPU by default and stores downloaded models in a named volume.
-The gateway uses `http://ollama:11434` internally. Real Jev checks still require
-the TypeSafe key; keep `ACL_JUDGE=demo` only for demonstrations.
+Real Jev checks require the TypeSafe key; keep `ACL_JUDGE=demo` only for offline demonstrations.
 
 ## Development without Docker
 

@@ -134,7 +134,7 @@ models:
   deepseek/deepseek-v4.1-flash: {upstream: openrouter, input_per_m: 0.10, output_per_m: 0.30}
 ```
 
-Each approved model names its upstream (`openrouter`, `ollama`, `mock`), optionally a price per million tokens (used
+Each approved model names its upstream (`openrouter`, or `mock` for the scripted test model), optionally a price per million tokens (used
 only when the provider does not report the cost), and optionally `max_class`: the highest data class it may receive,
 below `classification.max_to_model`. That is the vendor approval: a model added from the dashboard's Policies page gets
 the lowest class (`internal`) unless someone chooses higher, so a new vendor sees no client data by default.

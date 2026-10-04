@@ -21,15 +21,6 @@ gateway:
 dashboard:
     cd dashboard && npm run dev
 
-# local model server on :11434 (CPU on yoga)
-ollama:
-    ollama serve
-
-# pull the small models we plan to use (run once, before the wifi gets bad)
-models:
-    ollama pull llama-guard3:1b
-    ollama pull qwen3:4b
-
 # install or update all dependencies
 install:
     cd gateway && uv sync

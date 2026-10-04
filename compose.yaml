@@ -10,7 +10,6 @@ services:
       ACL_AUDIT: /app/gateway/data/audit.jsonl
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OLLAMA_URL: http://ollama:11434
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
       - "127.0.0.1:${DASHBOARD_PORT:-3000}:3000"
@@ -69,12 +68,6 @@ services:
       gateway:
         condition: service_healthy
 
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["ollama"]
-    volumes:
-      - ollama-data:/root/.ollama
-    restart: unless-stopped
 
   tests:
     profiles: ["test"]
@@ -85,6 +78,5 @@ services:
 
 volumes:
   audit-data:
-  ollama-data:
   dashboard-node-modules:
   dashboard-next:

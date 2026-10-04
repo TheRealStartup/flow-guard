@@ -34,7 +34,7 @@ with the decision in the same audit log and dashboard as our scripted demo agent
 | Can block a tool call | Yes: drop it from the model's answer | Yes: hook returns `deny` with a reason |
 | Can hide secrets from the model | Yes: tokenize tool results before forwarding | Not for built-in tools (⚠️ verify; MCP output only) |
 | Injection check, budgets, model allowlist | Yes, existing engine | Tool-call checks only |
-| Model | Any model in `policy.models` (Ollama, mock) | Whatever Claude Code uses (Anthropic) |
+| Model | Any model in `policy.models` (OpenRouter, mock) | Whatever Claude Code uses (Anthropic) |
 | Work | New `/v1/messages` adapter (format translation + SSE) | Hook script + `/api/decide` endpoint |
 
 **Decision: build A first** (it is the user's demo and reuses the whole engine). B is phase 2: it adds an
@@ -50,7 +50,7 @@ claude (ANTHROPIC_BASE_URL=http://localhost:8000)
   → identity.resolve()                 key → devon / claude-code, default purpose, session from Claude Code's id
   → translate Anthropic → OpenAI chat  (system, messages, tool_use/tool_result, tools)
   → engine.check_request()             signatures, redaction, barrier, Jev, spotlight, budget   (unchanged)
-  → call_upstream()                    ollama | openrouter | mock                               (unchanged)
+  → call_upstream()                    openrouter | mock                                        (unchanged)
   → engine.check_response()            access.tools, signatures on args, flow, budget, detokenize (unchanged)
   → translate OpenAI → Anthropic       tool_calls → tool_use blocks; notes → text block
   → replay as SSE                      message_start … content_block_* … message_delta, message_stop

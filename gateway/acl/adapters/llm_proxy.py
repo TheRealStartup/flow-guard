@@ -25,15 +25,11 @@ Upstream = Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
 async def call_upstream(body: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str, Any]:
     if model_cfg.get("upstream") == "mock":
         return compromised_model(body)
-    if model_cfg.get("upstream") == "ollama":
-        url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434") + "/v1/chat/completions"
-        headers = {}
-    else:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}"}
-        body = {**body, "usage": {"include": True}}
-        if model_cfg.get("providers"):
-            body["provider"] = {"only": model_cfg["providers"]}
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}"}
+    body = {**body, "usage": {"include": True}}
+    if model_cfg.get("providers"):
+        body["provider"] = {"only": model_cfg["providers"]}
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(url, json=body, headers=headers)
         if r.status_code >= 400:

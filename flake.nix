@@ -1,5 +1,5 @@
 {
-  description = "ai-control-layer (HackYeah 2026, Goldman Sachs task): policy gateway for agents, FastAPI + Next.js dashboard + local Ollama";
+  description = "ai-control-layer (HackYeah 2026, Goldman Sachs task): policy gateway for agents, FastAPI + Next.js dashboard ";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
@@ -37,7 +37,6 @@
             packages =
               (with pkgs; [
                 nodejs_22 # dashboard: next, npm, npx (shadcn)
-                ollama # local models (CPU on yoga); `just ollama`
                 sqlite # inspect state / audit db
                 uv
                 ruff

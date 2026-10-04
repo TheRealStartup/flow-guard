@@ -41,7 +41,7 @@ function settingsOf(id: string, c: ControlConfig, d: Details): string {
     case "models.allowlist":
       return `${Object.keys(d.models).length} approved models · any other model is ${({ block: "refused", flag: "let through and recorded", allow: "let through" } as Record<string, string>)[c.action] ?? c.action}`;
     case "budget":
-      return `${(b.max_tokens ?? 0) / 1000}k tokens · $${b.max_cost_usd} · ${b.max_tool_calls} calls · ${b.max_compute_seconds} s compute / session`;
+      return `${(b.max_tokens ?? 0) / 1000}k tokens · $${b.max_cost_usd} · ${b.max_tool_calls} calls · ${b.max_compute_seconds} s model time / session`;
     case "pii.card":
       return "regex + Luhn checksum → reversible token";
     case "pii.iban":
@@ -208,7 +208,7 @@ export default function PoliciesPage() {
                       <div className="text-sm text-muted-foreground">{CONTROLS[id]?.name ?? ""}</div>
                     </td>
                     <td className="py-3 pr-3">
-                      <span className={cn("rounded border px-1.5 py-0.5 text-xs", id === "injection.jev" ? "border-redact/40 text-redact" : "text-muted-foreground")}>{kindOf(id)}</span>
+                      <span className={cn("rounded border px-1.5 py-0.5 text-xs whitespace-nowrap", id === "injection.jev" ? "border-redact/40 text-redact" : "text-muted-foreground")}>{kindOf(id)}</span>
                     </td>
                     <td className="py-3 pr-3">
                       <ActionToggle
@@ -306,9 +306,14 @@ function Models({ d, onChanged }: { d: Details; onChanged: () => void }) {
           <li key={id} className="flex items-center gap-2 px-6 py-2.5">
             <span className="truncate font-mono text-sm">{id}</span>
             <span className="ml-auto shrink-0 text-sm text-muted-foreground">
-              {m.upstream}
-              {m.input_per_m != null ? ` · $${m.input_per_m}/$${m.output_per_m} per M` : ""}
+              {m.upstream === "mock" ? "scripted, never leaves this machine" : m.upstream === "openrouter" ? "OpenRouter" : m.upstream}
+              {m.input_per_m != null ? ` · $${m.input_per_m}/$${m.output_per_m} per M tokens` : ""}
             </span>
+            {m.upstream === "mock" && (
+              <span className="shrink-0 rounded bg-flag-soft px-1.5 py-0.5 text-xs text-flag" title="Plays a hijacked model for demos and tests: it obeys every hidden instruction">
+                test only
+              </span>
+            )}
             <span className="shrink-0 rounded border px-1.5 py-0.5 font-mono text-xs" title="Highest data class this model may receive">
               ≤ {m.effective_class}
             </span>
@@ -367,32 +372,52 @@ function Models({ d, onChanged }: { d: Details; onChanged: () => void }) {
   );
 }
 
-const fmtBudget = (b: Budget) =>
-  [
-    b.max_cost_usd != null && `$${b.max_cost_usd}`,
-    b.max_tokens != null && (b.max_tokens >= 1e6 ? `${+(b.max_tokens / 1e6).toFixed(1)}M tokens` : `${(b.max_tokens / 1000).toLocaleString("en-US")}k tokens`),
-    b.max_tool_calls != null && `${b.max_tool_calls} tool calls`,
-    b.max_compute_seconds != null && `${b.max_compute_seconds} s compute`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+const ROLE_LABEL: Record<string, string> = {
+  support_junior: "Support (junior)",
+  fraud_analyst: "Fraud analyst",
+  onboarding_analyst: "Onboarding analyst",
+  mna_banker: "M&A banker",
+  developer: "Developer",
+  hr_admin: "HR administrator",
+};
+const roleLabel = (r: string) => ROLE_LABEL[r] ?? r.charAt(0).toUpperCase() + r.slice(1).replaceAll("_", " ");
 
+const BUDGET_COLS: { key: keyof Budget; label: string; fmt: (v: number) => string }[] = [
+  { key: "max_cost_usd", label: "Cost", fmt: (v) => `$${v}` },
+  { key: "max_tokens", label: "Tokens", fmt: (v) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : `${(v / 1000).toLocaleString("en-US")}k`) },
+  { key: "max_tool_calls", label: "Tool calls", fmt: (v) => String(v) },
+  { key: "max_compute_seconds", label: "Model time", fmt: (v) => (v >= 60 ? `${v / 60} min` : `${v} s`) },
+];
+
+/** One aligned table: a row for the default and one per role that changes it; only the columns this level uses. */
 function BudgetRows({ base, roles }: { base: Budget; roles: [string, Budget | undefined][] }) {
+  const cols = BUDGET_COLS.filter((c) => base[c.key] != null || roles.some(([, b]) => b?.[c.key] != null));
+  const rows: [string, Budget, boolean][] = [["Default (all roles)", base, true], ...roles.filter(([, b]) => b).map(([r, b]) => [roleLabel(r), { ...base, ...b }, false] as [string, Budget, boolean])];
   return (
-    <dl className="flex flex-col gap-2 px-6 py-3 text-[15px]">
-      <div className="flex gap-3">
-        <dt className="text-muted-foreground">Every role</dt>
-        <dd className="ml-auto text-right font-mono text-sm">{fmtBudget(base)}</dd>
-      </div>
-      {roles
-        .filter(([, b]) => b)
-        .map(([role, b]) => (
-          <div key={role} className="flex gap-3">
-            <dt className="text-muted-foreground">{role}</dt>
-            <dd className="ml-auto text-right font-mono text-sm">{fmtBudget({ ...base, ...b })}</dd>
-          </div>
+    <table className="mx-6 my-2 w-[calc(100%-3rem)] text-[15px]">
+      <thead className="text-xs text-muted-foreground">
+        <tr>
+          <th className="py-1 text-left font-normal" />
+          {cols.map((c) => (
+            <th key={c.key} className="py-1 text-right font-normal">
+              {c.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([label, b, isDefault]) => (
+          <tr key={label}>
+            <td className={cn("py-1 pr-3", isDefault ? "font-medium" : "text-muted-foreground")}>{label}</td>
+            {cols.map((c) => (
+              <td key={c.key} className="py-1 pl-3 text-right font-mono text-sm tabular-nums">
+                {b[c.key] != null ? c.fmt(b[c.key] as number) : "—"}
+              </td>
+            ))}
+          </tr>
         ))}
-    </dl>
+      </tbody>
+    </table>
   );
 }
 

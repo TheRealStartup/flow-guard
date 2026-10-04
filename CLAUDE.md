@@ -9,20 +9,21 @@
 
 Brief, judging and all ideas: `~/Sync/vault/private/Life/HackYeah 2026 — AI Control Layer.md`. Read it first.
 Judging: guardrail robustness 30, architecture and performance 20, reporting 20, test suite 15–20, practicality 10–15.
-Judges run our tests, type ad-hoc prompts, and **edit `policy/policy.yaml` while it runs**. No paid APIs:
-everything must run locally (Ollama, CPU on yoga, no GPU, 30 GB RAM).
+Judges run our tests, type ad-hoc prompts, and **edit `policy/policy.yaml` while it runs**. The live demo uses two outside
+services (DeepSeek via OpenRouter, the Jev judge), so it needs internet; `ACL_JUDGE=demo` and the scripted model run offline.
+(The early plan of local models on Ollama was dropped on Sun 4 Oct.)
 
 ## MVP (decided direction, details open)
 Bank support agent acting on behalf of a user. One Python policy engine, thin adapters:
 - `gateway/acl/adapters/mcp.py`: FastMCP proxy + middleware in front of demo MCP servers. Swaps card
   numbers for reversible tokens (`[[CARD:…1111]]`) before the model sees them; puts the real value back
   only at sinks the policy allows.
-- `gateway/acl/adapters/llm.py`: OpenAI-compatible `/v1/chat/completions` → Ollama. Prompt checks, budgets,
+- `gateway/acl/adapters/llm_proxy.py`: OpenAI-compatible `/v1/chat/completions` → OpenRouter (or the scripted model). Prompt checks, budgets,
   dropping blocked tool calls. No streaming when tools are present (MVP).
 - `gateway/acl/adapters/hook.py`: Claude Code PreToolUse/PostToolUse hook → engine `/decide`.
 - Data-flow labels per session (tokens = labels); PCI → external sink needs a four-eyes approval bound
   to the hash of the exact arguments.
-- Detector tiers: regex + Luhn → small classifier → Ollama judge, each with its latency logged.
+- Detector tiers: regex + checksums → the Jev judge (outside service), each with its latency logged.
 - Hash-chained JSONL audit log (every entry has the policy version), `/metrics`, SSE events → dashboard.
 - Tests: pytest, cases as YAML in `tests/cases/` (input, user, expected decision).
 
@@ -35,7 +36,7 @@ are in `demo/dev-keys.env` (test values). `just new-key <user> <agent>` makes a 
 `demo/` fake customer DB MCP server, outbox, demo agent · `tests/` · `docs/` architecture diagram.
 
 ## Run
-`direnv allow` (or `nix develop`), `just install`, `just ollama` + `just models` once, `just dev`, `just test`.
+`direnv allow` (or `nix develop`), `just install`, `just dev` (gateway, dashboard, signature feed), `just test`.
 
 ## Status (Sat 3 Oct ~16:30)
 Working: model proxy (`/v1/chat/completions`), policy live reload + profiles, card/IBAN/PESEL/secret

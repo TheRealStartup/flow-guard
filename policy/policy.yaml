@@ -106,7 +106,6 @@ profiles:
 # the provider does not report the cost itself. Local models cost $0 but use compute time.
 models:
   deepseek/deepseek-v4.1-flash: {upstream: openrouter, input_per_m: 0.10, output_per_m: 0.30}
-  qwen3:4b:                     {upstream: ollama}
   mock/compromised:             {upstream: mock}   # scripted model that obeys injected instructions (demo + tests)
 
 # Budgets are defined per role (never per person) and counted per person. `session` stops runaway loops; `daily`

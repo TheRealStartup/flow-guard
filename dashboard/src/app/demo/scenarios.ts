@@ -22,9 +22,8 @@ export const EXAMPLES: { id: string; label: string; user: string; prompt: string
 ];
 
 export const MODELS = [
-  { value: "mock/compromised", label: "mock/compromised · obeys injections, instant" },
-  { value: "deepseek/deepseek-v4.1-flash", label: "DeepSeek v4.1 flash · needs OPENROUTER_API_KEY" },
-  { value: "qwen3:4b", label: "qwen3:4b · needs the Ollama profile" },
+  { value: "deepseek/deepseek-v4.1-flash", label: "DeepSeek v4.1 flash · via OpenRouter" },
+  { value: "mock/compromised", label: "Scripted test model · obeys every hidden instruction (worst case)" },
 ];
 
 // policy.yaml `sinks.external`: data leaves the organisation through these tools.
