@@ -241,6 +241,14 @@ class Policy:
         """Class of a tool's results, from the policy only (never from the content or the model)."""
         return (self.classification.get("tools") or {}).get(tool) if tool else None
 
+    def tool_integrity(self, tool: str | None) -> str:
+        """Who can write a tool's results (docs/decisions.md D10): "bank" when only the bank's own systems write them,
+        "external" when someone outside can (a client's document, an email, a web page, a public register). From the
+        policy only; a tool the policy does not list, or a result the gateway cannot tie to its call, is external."""
+        if not tool:
+            return "external"
+        return ((self.raw.get("integrity") or {}).get("tools") or {}).get(tool, "external")
+
     def term_rank(self, text: str) -> int:
         """Highest class among restricted terms named in `text` (a barrier entry without `class` ranks at the top)."""
         low, top = text.lower(), -1
@@ -288,7 +296,7 @@ class Policy:
         if tool not in (self.classification.get("block_calls_above_limit") or []):
             return None
         limit = self.model_limit(model)
-        if self.action("injection.jev") != "allow":
+        if self.action("injection.jev") != "allow" and self.tool_integrity(tool) != "bank":  # bank results skip Jev
             limit = min(limit, self.judge_limit())
         cls = self.rank(self.tool_class(tool))
         return (self.level(cls), self.level(limit) if limit >= 0 else "no limit set (fail closed)") if cls > limit else None
@@ -360,6 +368,21 @@ def _check_classes(raw: dict[str, Any], controls: dict[str, dict]) -> None:
         raise ValueError("classification.block_calls_above_limit must be a list of tool names")
 
 
+INTEGRITY = ("external", "bank")
+
+
+def _check_integrity(raw: dict[str, Any]) -> None:
+    """A misspelt value would quietly skip or force the injection check; reject it so the last good policy stays."""
+    i = raw.get("integrity")
+    if i is None:
+        return  # no section: every tool result is external, so all of them are checked
+    if i.get("default", "external") != "external":
+        raise ValueError("integrity.default must be external: a tool nobody listed is checked, never trusted by default")
+    for where, v in ((f"integrity.tools.{t}", v) for t, v in (i.get("tools") or {}).items()):
+        if v not in INTEGRITY:
+            raise ValueError(f"{where}: {v!r} must be external (someone outside the bank can write it) or bank")
+
+
 def _str_list(v: Any, where: str, *, empty: bool = False) -> list[str]:
     if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v) or (not v and not empty):
         raise ValueError(f"{where} must be a {'' if empty else 'non-empty '}list of non-empty strings")
@@ -429,6 +452,7 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
     for pat in (raw.get("egress") or {}).get("patterns", []):
         re.compile(pat)  # a broken pattern is rejected here, so the last good policy stays active
     _check_classes(raw, controls)
+    _check_integrity(raw)
     purpose_rules = _purpose_rules(controls)
     for name, r in (raw.get("roles") or {}).items():
         if "redact_purpose" in (r or {}) and not isinstance(r["redact_purpose"], bool):
@@ -535,7 +559,7 @@ def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
         for k in sorted(set(a) | set(b)):
             if a.get(k) != b.get(k):
                 out.append({"what": f"controls.{cid}.{k}", "old": a.get(k), "new": b.get(k)})
-    for key in ("budgets", "models", "users", "roles", "scopes", "sinks", "egress", "classification", "datalake", "barriers", "identity"):
+    for key in ("budgets", "models", "users", "roles", "scopes", "sinks", "egress", "classification", "integrity", "datalake", "barriers", "identity"):
         if old.raw.get(key) != new.raw.get(key):
             out.append({"what": key, "old": old.raw.get(key), "new": new.raw.get(key)})
     if [x.id for x in old.signatures] != [x.id for x in new.signatures]:

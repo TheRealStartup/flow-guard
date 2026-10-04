@@ -148,3 +148,28 @@ scripted model obeys every instruction it reads. It is used for two beats only, 
 purpose": the backstop (injection check on Flag, the data-flow rule still stops the email) and the runaway loop (the
 budget stops it). Everything else runs on DeepSeek. Paul dislikes mock models; may change (alternatives: recorded audit
 entries, or DeepSeek with the check on Flag and accept that it may refuse).
+
+## D10 · Integrity: the injection check looks only at what an outsider can write · DECIDED (Paul, Sun ~05:30)
+**Problem.** The first real onboarding-desk run (Claude Code, Sun ~06:30) quarantined the bank's own screening verdicts
+(Jev 0.77–0.80) and the hub's submission receipt (0.46). Nothing in them was written by an outsider: a screening verdict
+in a fixed format reads like an instruction ("resolve each result", "escalate"). Jev was calibrated on public datasets
+without agent tool results, and the threshold change (0.80 → 0.40) was merged without an end-to-end run.
+
+**Cause.** A design gap, not a threshold problem. Data classes (D6) answer *who may read* data (confidentiality, Bell–
+LaPadula). Nothing answered *whose words a result can carry* (integrity, Biba). Every tool result was treated as possibly
+hostile, so the check ran where there was nothing to find.
+
+**Decision.** A second axis per source, `integrity` in policy.yaml: `external` (an outsider can write it: a client's
+document, an email, a web page, a public register) or `bank` (written only by the bank's own systems). Jev checks
+prompts and external results; bank results are recorded as "not checked: written only by the bank's own system".
+- Unlisted tools are external, and `integrity.default` may not be set to `bank` (rejected on reload).
+- A result is `bank` only when this gateway let the call through to that tool in this session. History the gateway
+  did not see, or a result the agent relabels, is external.
+- Signatures, redaction, the class gate and spotlighting still run on bank results.
+- Jev's data-class limit no longer applies to bank results, because Jev never receives them.
+- Mixed systems are split by tool: the hub's case record is `bank`, its `get_document` (client submissions) is
+  `external`; `get_client_file` stays external because it carries the client's documents.
+
+**Limit.** A bank system that echoes an outsider's text (a submitted name in a screening result) carries a short piece of
+it unchecked. The signatures still see it; a system that echoes long outside text must be listed as external. Tests:
+tests/test_integrity.py.

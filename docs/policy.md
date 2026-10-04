@@ -93,6 +93,20 @@ Each destination has a limit: `max_to_model` for every model, a model's own `max
 `injection.jev.max_class` for the outside judge (`P2`, the same approval as the model vendor; DP30 reaches neither). Content above the limit is
 withheld. A tool result that may reach the model but not Jev cannot be injection-checked, so that request is blocked.
 
+## Integrity
+Data classes say who may **read** data. Integrity says who could have **written** a tool's result (docs/decisions.md
+D10). The AI injection check (Jev) looks for instructions an outsider planted, so it checks prompts and `external`
+results only.
+
+| Value | Meaning | Examples |
+|---|---|---|
+| `external` | someone outside the bank can write it; checked by Jev | client documents (`mcp__hub__get_document`, `get_client_file`), emails, web pages, files, a public register (LEI) |
+| `bank` | written only by the bank's own systems; not sent to Jev | screening verdicts, the case record, submission and send receipts |
+
+Rules: unlisted tools are `external`, and `integrity.default` cannot be `bank`. A result counts as `bank` only for a
+call the gateway let through to that tool; the agent's own label never makes it `bank`. Signatures, redaction, the class
+gate and spotlighting apply to every result.
+
 ## Data lake
 
 ```yaml
