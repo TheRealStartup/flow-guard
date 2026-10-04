@@ -14,6 +14,17 @@ from typing import Any
 import yaml
 
 ACTIONS = ("allow", "flag", "redact", "block")
+# What each control really does with each action. Redact only exists where there is something to cut out of a text;
+# a gate (model, tool, budget, data flow) can only let through, let through and record, or stop. A policy asking a
+# control for an action it does not implement is rejected (the last good policy stays), so the file never claims
+# something the engine does not do. Controls not listed here accept all four.
+GATE = ("allow", "flag", "block")
+SUPPORTED_ACTIONS: dict[str, tuple[str, ...]] = {
+    "models.allowlist": GATE, "budget": GATE, "access.tools": GATE, "access.scope": GATE, "access.datalake": GATE,
+    "access.purpose": GATE, "flow.sensitive_to_external": GATE, "spotlight": GATE,
+}
+UPSTREAMS = ("openrouter", "ollama")  # where a model added from the dashboard may run (mock is for tests and the demo only)
+MODEL_NAME = re.compile(r"^[\w.:/@+-]{1,100}$")
 SPOTLIGHT_MODES = ("delimit", "off")
 # Hosts in a shell command: URLs (scheme://host), user@host: (scp/rsync), and bare host names / IPs.
 HOST_RE = re.compile(r"(?:[a-z][\w+.-]*://|@)?((?:[\w-]+\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})(?=[:/\s'\"]|$)",
@@ -194,6 +205,8 @@ class Policy:
         return self._limit(self.classification.get("max_to_model"))
 
     def model_limit(self, model: str) -> int:
+        if model not in self.models:  # an unapproved model let through in monitor mode gets the default class only
+            return min(self.max_to_model, self._limit(self.classification.get("default")))
         own = (self.models.get(model) or {}).get("max_class")
         return min(self.max_to_model, self._limit(own)) if own is not None else self.max_to_model
 
@@ -348,8 +361,12 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
         raise ValueError(f"active_profile {profile!r} is not defined in profiles")
     controls = _merge(raw.get("controls", {}), profiles[profile])
     for cid, c in controls.items():
-        if c.get("action", "allow") not in ACTIONS:
-            raise ValueError(f"control {cid}: action must be one of {ACTIONS}")
+        allowed = SUPPORTED_ACTIONS.get(cid, ACTIONS)
+        if c.get("action", "allow") not in allowed:
+            raise ValueError(f"control {cid}: action must be one of {allowed}")
+    for name, m in (raw.get("models") or {}).items():
+        if not isinstance(m, dict):
+            raise ValueError(f"model {name}: settings must be a mapping like {{upstream: openrouter}}")
     if controls.get("spotlight", {}).get("mode", "delimit") not in SPOTLIGHT_MODES:
         raise ValueError(f"control spotlight: mode must be one of {SPOTLIGHT_MODES}")
 
@@ -378,8 +395,9 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
 def set_control_action(text: str, cid: str, action: str) -> str:
     """Return policy.yaml text with `controls.<cid>.action` set to `action`, touching only that value, so the
     file's comments and layout survive (a YAML round-trip would drop them). Raises ValueError if it can't."""
-    if action not in ACTIONS:
-        raise ValueError(f"action must be one of {ACTIONS}")
+    allowed = SUPPORTED_ACTIONS.get(cid, ACTIONS)
+    if action not in allowed:
+        raise ValueError(f"{cid}: action must be one of {allowed}")
     lines = text.splitlines(keepends=True)
     start = next((i for i, ln in enumerate(lines) if re.match(r"controls:\s*(#.*)?$", ln)), None)
     if start is None:
@@ -401,6 +419,51 @@ def set_control_action(text: str, cid: str, action: str) -> str:
                 return "".join(lines)
         raise ValueError(f"control {cid} has no action to change")
     raise ValueError(f"no control {cid!r} in policy.yaml")
+
+
+def _models_block(lines: list[str]) -> tuple[int, int]:
+    """Line range of the entries under the top-level `models:` key (start inclusive, end exclusive)."""
+    start = next((i for i, ln in enumerate(lines) if re.match(r"models:\s*(#.*)?$", ln)), None)
+    if start is None:
+        raise ValueError("policy.yaml has no models section")
+    end = start + 1
+    while end < len(lines) and (not lines[end].strip() or lines[end].startswith(" ") or lines[end].lstrip().startswith("#")):
+        end += 1
+    while end - 1 > start and not lines[end - 1].strip():  # trailing blank lines belong to the gap, not the block
+        end -= 1
+    return start + 1, end
+
+
+def _model_key(line: str) -> str | None:
+    m = re.match(r'^  ("?)(.+?)\1:\s', line)
+    return m.group(2) if m else None
+
+
+def add_model(text: str, name: str, upstream: str, max_class: str) -> str:
+    """Return policy.yaml text with one model appended to `models`, comments and layout untouched."""
+    if not MODEL_NAME.match(name):
+        raise ValueError("model name: letters, digits and . : / @ + - _ only, at most 100 characters")
+    if upstream not in UPSTREAMS:
+        raise ValueError(f"upstream must be one of {UPSTREAMS}")
+    lines = text.splitlines(keepends=True)
+    a, b = _models_block(lines)
+    if any(_model_key(ln) == name for ln in lines[a:b]):
+        raise ValueError(f"model {name!r} is already approved")
+    entry = f"  {json.dumps(name)}: {{upstream: {upstream}, max_class: {max_class}}}   # added from the dashboard\n"
+    if b > 0 and not lines[b - 1].endswith("\n"):
+        lines[b - 1] += "\n"
+    return "".join(lines[:b] + [entry] + lines[b:])
+
+
+def remove_model(text: str, name: str) -> str:
+    lines = text.splitlines(keepends=True)
+    a, b = _models_block(lines)
+    hit = [i for i in range(a, b) if _model_key(lines[i]) == name]
+    if not hit:
+        raise ValueError(f"no model {name!r} in policy.yaml")
+    if len([i for i in range(a, b) if _model_key(lines[i])]) == 1:
+        raise ValueError("the last approved model cannot be removed")
+    return "".join(lines[: hit[0]] + lines[hit[0] + 1 :])
 
 
 def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:

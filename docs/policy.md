@@ -24,6 +24,11 @@ Every control takes one action, from weakest to strongest:
 | `redact` | replace the sensitive part: PII and secrets become reversible tokens such as `[[IBAN#3 ****2874]]`; injected text is quarantined |
 | `block` | stop the request, or drop the tool call before the agent runs it |
 
+Each control accepts only the actions it implements. Redact exists only where something can be cut out of a text
+(PII, secrets, signatures, barrier, injection check); gates (models, budget, tool access, scope, data lake, purpose, data
+flow, spotlighting) take allow, flag or block. Any other value is rejected like a broken edit, and the dashboard shows
+only the valid buttons.
+
 `defaults.on_error` (and a control's own `on_error`) says what happens when a check itself fails or times out:
 `block` (fail closed, the default) or `allow`.
 
@@ -123,8 +128,13 @@ models:
   deepseek/deepseek-v4.1-flash: {upstream: openrouter, input_per_m: 0.10, output_per_m: 0.30}
 ```
 
-Each allowed model names its upstream (`openrouter`, `ollama`, `mock`) and, optionally, a price per million tokens,
-used only when the provider does not report the cost. `mock/compromised` is a scripted model that obeys every
+Each approved model names its upstream (`openrouter`, `ollama`, `mock`), optionally a price per million tokens (used
+only when the provider does not report the cost), and optionally `max_class`: the highest data class it may receive,
+below `classification.max_to_model`. That is the vendor approval: a model added from the dashboard's Policies page gets
+the lowest class (`internal`) unless someone chooses higher, so a new vendor sees no client data by default.
+
+`models.allowlist` is the enforcement switch, shown as **Enforce** (block: other models are refused), **Monitor** (flag:
+other models are let through, recorded, and get only the default class) and **Off** (allow). `mock/compromised` is a scripted model that obeys every
 injected instruction; the demo and the tests use it to show the controls, not the model's manners.
 
 ## Budgets

@@ -377,8 +377,11 @@ class Engine:
             if d.action == "block":
                 return stop(d)
             ex.decisions.append(d)
-        if p.action("models.allowlist") == "block" and model not in p.models:
-            return stop(Decision("models.allowlist", "block", "model", f"model {model!r} is not in the policy's allowed models"))
+        if model not in p.models and (act := p.action("models.allowlist")) != "allow":
+            if act == "block":
+                return stop(Decision("models.allowlist", "block", "model", f"model {model!r} is not in the policy's allowed models"))
+            ex.decisions.append(Decision("models.allowlist", "flag", "model",
+                                         f"model {model!r} is not approved; let through and recorded (monitor mode), default data class only"))
         if (over := self._over_budget(p, s)) and p.action("budget") != "allow":
             d = Decision("budget", p.action("budget"), "session", over)
             if d.action == "block":

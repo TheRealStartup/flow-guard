@@ -499,3 +499,45 @@ def test_dashboard_policy_edit_works_when_the_file_cannot_be_swapped(gw, monkeyp
     assert r.status_code == 200 and r.json()["action"] == "flag"
     assert "pii.iban:           {action: flag}" in gw.policy_path.read_text()
     assert not gw.policy_path.with_suffix(".yaml.tmp").exists()
+
+
+# ---------- each control offers only the actions it implements; the approved-model list ----------
+
+def test_a_control_rejects_an_action_it_does_not_implement(gw):
+    r = gw.client.post("/api/policy/controls/access.tools", json={"action": "redact"})  # a tool call cannot be "redacted"
+    assert r.status_code == 400 and "allow" in r.json()["detail"]
+    gw.edit_policy(lambda p: p["controls"]["models.allowlist"].update(action="redact"))  # same rule for a hand edit
+    h = gw.client.get("/api/health").json()
+    assert h["policy_error"] and "models.allowlist" in h["policy_error"]  # rejected, the last good policy stays
+    details = gw.client.get("/api/policy/details").json()
+    assert details["supported_actions"]["models.allowlist"] == ["allow", "flag", "block"]
+    assert details["supported_actions"]["pii.iban"] == ["allow", "flag", "redact", "block"]
+
+
+def test_monitor_mode_lets_an_unapproved_model_through_recorded_with_the_lowest_class(gw):
+    assert gw.client.post("/api/policy/controls/models.allowlist", json={"action": "flag"}).status_code == 200
+    gw.upstream.next_reply = {"text": "ok"}
+    r = gw.chat("olivia", [{"role": "user", "content": "Summarise it."},
+                           {"role": "assistant", "content": None, "tool_calls": [{"id": "c", "type": "function", "function": {"name": "get_client_file", "arguments": "{}"}}]},
+                           {"role": "tool", "tool_call_id": "c", "content": json.dumps({"note": "client prefers quarterly settlement"})}],
+                model="some/unapproved-model")
+    ds = [(d["control"], d["action"]) for d in r.json()["acl"]["decisions"]]
+    assert ("models.allowlist", "flag") in ds  # let through, recorded
+    assert ("classification", "redact") in ds and "quarterly settlement" not in json.dumps(gw.upstream.seen)  # P2 file withheld
+
+
+def test_dashboard_adds_and_removes_an_approved_model_keeping_the_comments(gw):
+    before = gw.policy_path.read_text()
+    r = gw.client.post("/api/policy/models", json={"model": "mistralai/mistral-small-3.2", "upstream": "openrouter"})
+    assert r.status_code == 200 and r.json()["settings"] == {"upstream": "openrouter", "max_class": "internal"}  # lowest class by default
+    text = gw.policy_path.read_text()
+    assert text.count("#") == before.count("#") + 1  # every comment kept, one added on the new line
+    details = gw.client.get("/api/policy/details").json()
+    assert details["models"]["mistralai/mistral-small-3.2"]["effective_class"] == "internal"
+    assert gw.client.post("/api/policy/models", json={"model": "mistralai/mistral-small-3.2"}).status_code == 400  # already there
+    assert gw.client.post("/api/policy/models", json={"model": "bad name\n  x: 1"}).status_code == 400
+    assert gw.client.post("/api/policy/models", json={"model": "x/y", "upstream": "mock"}).status_code == 400
+    assert gw.client.delete("/api/policy/models/mistralai/mistral-small-3.2").status_code == 200
+    assert gw.policy_path.read_text() == before
+    assert gw.client.delete("/api/policy/models/qwen3:4b").status_code == 200  # a name with a colon
+    assert "qwen3:4b" not in gw.client.get("/api/policy/details").json()["models"]

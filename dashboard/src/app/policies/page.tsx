@@ -16,7 +16,10 @@ type Details = {
   base_controls: Record<string, ControlConfig>;
   profiles: Record<string, Record<string, Partial<ControlConfig>>>;
   controls: Record<string, ControlConfig>;
-  models: Record<string, { upstream: string; input_per_m?: number; output_per_m?: number }>;
+  models: Record<string, { upstream: string; input_per_m?: number; output_per_m?: number; max_class?: string; effective_class: string }>;
+  levels: string[];
+  upstreams: string[];
+  supported_actions: Record<string, Action[]>;
   budgets: { session?: { max_tokens?: number; max_cost_usd?: number; max_tool_calls?: number; max_compute_seconds?: number } };
   identity: { mode: string; require_purpose: boolean; keys: { user: string; agent: string }[] };
   users: Record<string, { role: string; side?: string; assigned_clients?: string[]; deals?: number }>; // deals: a count, ids are codenames
@@ -33,7 +36,7 @@ function settingsOf(id: string, c: ControlConfig, d: Details): string {
   const onErr = c.on_error ? ` · on error ${c.on_error}` : "";
   switch (id) {
     case "models.allowlist":
-      return `${Object.keys(d.models).length} models (${[...new Set(Object.values(d.models).map((m) => m.upstream))].join(", ")})`;
+      return `${Object.keys(d.models).length} approved models · any other model is ${({ block: "refused", flag: "let through and recorded", allow: "let through" } as Record<string, string>)[c.action] ?? c.action}`;
     case "budget":
       return `${(b.max_tokens ?? 0) / 1000}k tokens · $${b.max_cost_usd} · ${b.max_tool_calls} calls · ${b.max_compute_seconds} s compute / session`;
     case "pii.card":
@@ -207,6 +210,8 @@ export default function PoliciesPage() {
                     <td className="py-3 pr-3">
                       <ActionToggle
                         value={c.action as Action}
+                        options={d.supported_actions[id] ?? ["allow", "flag", "redact", "block"]}
+                        labels={ACTION_LABELS[id]}
                         pending={pending === id}
                         locked={override && "action" in override ? `The ${d.profile} profile sets this action. Change profiles.${d.profile} in policy.yaml.` : null}
                         onChange={(a) => setAction(id, a)}
@@ -237,7 +242,7 @@ export default function PoliciesPage() {
 
       {d && (
         <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-2">
-          <Models d={d} />
+          <Models d={d} onChanged={reload} />
           <Budgets d={d} />
         </div>
       )}
@@ -263,22 +268,97 @@ const fmt = (v: unknown) => {
   return s === undefined ? "—" : s.length > 80 ? s.slice(0, 77) + "…" : s;
 };
 
-function Models({ d }: { d: Details }) {
+function Models({ d, onChanged }: { d: Details; onChanged: () => void }) {
+  const [name, setName] = useState("");
+  const [upstream, setUpstream] = useState(d.upstreams[0] ?? "openrouter");
+  const [cls, setCls] = useState(d.levels[1] ?? "internal");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mode = d.controls["models.allowlist"]?.action;
+
+  async function send(url: string, init: RequestInit) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(url, init);
+      if (!r.ok) setError(((await r.json().catch(() => null)) as { detail?: string } | null)?.detail ?? `error ${r.status}`);
+      else setName("");
+      onChanged();
+    } catch {
+      setError("the gateway could not be reached");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const approve = () =>
+    send("/api/policy/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: name.trim(), upstream, max_class: cls }) });
+  const remove = (id: string) => send(`/api/policy/models/${id.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
+
   return (
     <Panel>
-      <PanelHeader title="Allowed models" count={Object.keys(d.models).length} />
+      <PanelHeader title="Approved models" count={Object.keys(d.models).length} />
       <ul className="divide-y">
         {Object.entries(d.models).map(([id, m]) => (
-          <li key={id} className="flex items-baseline gap-2 px-6 py-2.5">
+          <li key={id} className="flex items-center gap-2 px-6 py-2.5">
             <span className="truncate font-mono text-sm">{id}</span>
             <span className="ml-auto shrink-0 text-sm text-muted-foreground">
               {m.upstream}
               {m.input_per_m != null ? ` · $${m.input_per_m}/$${m.output_per_m} per M` : ""}
             </span>
+            <span className="shrink-0 rounded border px-1.5 py-0.5 font-mono text-xs" title="Highest data class this model may receive">
+              ≤ {m.effective_class}
+            </span>
+            <button
+              onClick={() => remove(id)}
+              disabled={busy}
+              aria-label={`Remove ${id}`}
+              title="Remove from the approved list"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-block disabled:opacity-50"
+            >
+              <X className="size-4" />
+            </button>
           </li>
         ))}
       </ul>
-      <p className="border-t px-6 py-3 text-sm text-muted-foreground">Any other model is refused before the request leaves the gateway.</p>
+      <form
+        className="flex flex-wrap items-center gap-2 border-t px-6 py-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) approve();
+        }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="provider/model, e.g. mistralai/mistral-small-3.2"
+          aria-label="Model name"
+          className="min-w-0 flex-1 rounded-md border border-input bg-muted px-3 py-1.5 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        />
+        <select value={upstream} onChange={(e) => setUpstream(e.target.value)} aria-label="Runs on" className="rounded-md border bg-card px-2 py-1.5 text-sm">
+          {d.upstreams.map((u) => (
+            <option key={u}>{u}</option>
+          ))}
+        </select>
+        <select value={cls} onChange={(e) => setCls(e.target.value)} aria-label="Highest data class" className="rounded-md border bg-card px-2 py-1.5 text-sm">
+          {d.levels.map((l) => (
+            <option key={l} value={l}>
+              ≤ {l}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={busy || !name.trim()} className="rounded-md border bg-card px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50">
+          Approve
+        </button>
+      </form>
+      {error && <p className="px-6 pb-3 text-sm text-block">{error}</p>}
+      <p className="border-t px-6 py-3 text-sm text-muted-foreground">
+        {mode === "block"
+          ? "Enforced: any other model is refused before the request leaves the gateway."
+          : mode === "flag"
+            ? "Monitor: other models are let through, recorded, and receive only the lowest data class."
+            : "Off: any model is let through."}{" "}
+        A new model sees no client data until its class is raised.
+      </p>
     </Panel>
   );
 }
@@ -307,6 +387,11 @@ function Budgets({ d }: { d: Details }) {
   );
 }
 
+/** Controls whose actions read better in their own words (the stored value stays allow / flag / block). */
+const ACTION_LABELS: Record<string, Partial<Record<Action, string>>> = {
+  "models.allowlist": { allow: "Off", flag: "Monitor", block: "Enforce" },
+};
+
 const TOGGLE: Record<Action, string> = {
   allow: "bg-allow-soft text-allow",
   flag: "bg-flag-soft text-flag",
@@ -314,8 +399,22 @@ const TOGGLE: Record<Action, string> = {
   block: "bg-block-soft text-block",
 };
 
-/** Allow · Flag · Redact · Block for one control; the active one carries its decision colour. */
-function ActionToggle({ value, pending, locked, onChange }: { value: Action; pending: boolean; locked: string | null; onChange: (a: Action) => void }) {
+/** The actions this control implements (from the gateway); the active one carries its decision colour. */
+function ActionToggle({
+  value,
+  options,
+  labels,
+  pending,
+  locked,
+  onChange,
+}: {
+  value: Action;
+  options: Action[];
+  labels?: Partial<Record<Action, string>>;
+  pending: boolean;
+  locked: string | null;
+  onChange: (a: Action) => void;
+}) {
   return (
     <div
       role="radiogroup"
@@ -323,7 +422,7 @@ function ActionToggle({ value, pending, locked, onChange }: { value: Action; pen
       title={locked ?? undefined}
       className={cn("inline-flex overflow-hidden rounded-md border text-xs", pending && "opacity-60", locked && "opacity-70")}
     >
-      {(["allow", "flag", "redact", "block"] as Action[]).map((a) => (
+      {options.map((a) => (
         <button
           key={a}
           role="radio"
@@ -335,7 +434,7 @@ function ActionToggle({ value, pending, locked, onChange }: { value: Action; pen
             value === a ? cn(TOGGLE[a], "font-semibold") : "bg-card text-muted-foreground enabled:hover:bg-accent",
           )}
         >
-          {a}
+          {labels?.[a] ?? a}
         </button>
       ))}
     </div>

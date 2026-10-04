@@ -23,7 +23,7 @@ from acl.adapters.llm_proxy import router as llm_router
 from acl.detectors.demo import DemoJudge
 from acl.detectors.jev import JevJudge, Judge
 from acl.engine import Engine
-from acl.policy import PolicyStore, parse, set_control_action
+from acl.policy import ACTIONS, SUPPORTED_ACTIONS, UPSTREAMS, PolicyStore, add_model, parse, remove_model, set_control_action
 from acl.state import AuditLog
 from acl.stream import audit_stream
 
@@ -36,6 +36,12 @@ LOCAL = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 class ActionRequest(BaseModel):
     action: str  # allow | flag | redact | block
+
+
+class ModelRequest(BaseModel):
+    model: str
+    upstream: str = "openrouter"  # openrouter | ollama
+    max_class: str | None = None  # highest data class it may receive; default: the lowest (classification.default)
 
 
 class TryRequest(BaseModel):
@@ -86,7 +92,10 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             "version": p.version, "profile": p.profile, "error": policies.last_error,
             "defaults": raw.get("defaults", {}),
             "base_controls": raw.get("controls", {}), "profiles": raw.get("profiles", {}), "controls": p.controls,
-            "models": p.models, "budgets": raw.get("budgets", {}),
+            "models": {m: {**cfg, "effective_class": p.level(p.model_limit(m))} for m, cfg in p.models.items()},
+            "levels": p.levels, "upstreams": list(UPSTREAMS),
+            "supported_actions": {cid: list(SUPPORTED_ACTIONS.get(cid, ACTIONS)) for cid in p.controls},
+            "budgets": raw.get("budgets", {}),
             "identity": {**p.identity, "keys": sorted(p.identities.values(), key=lambda i: i["user"])},
             "users": users, "roles": raw.get("roles", {}), "sinks": raw.get("sinks", {}),
             "scopes": raw.get("scopes", {}),
@@ -99,16 +108,22 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     def set_action(cid: str, body: ActionRequest, request: Request):
         """Change one control's action from the dashboard. Writes only that value in policy.yaml (comments stay),
         then reloads: the change is versioned, audited and streamed exactly like a hand edit. Local only."""
-        if (request.client.host if request.client else "") not in LOCAL:
-            raise HTTPException(403, "Policy edits are only accepted from localhost")
         p = policies.get()
         if cid not in p.raw.get("controls", {}):
             raise HTTPException(404, f"no control {cid!r}")
         if "action" in (p.raw.get("profiles", {}).get(p.profile, {}).get(cid) or {}):
             raise HTTPException(409, f"the active profile {p.profile!r} sets this action; edit profiles.{p.profile} in policy.yaml")
+        p = write_policy(request, lambda text: set_control_action(text, cid, body.action))
+        return {"version": p.version, "control": cid, "action": p.action(cid)}
+
+    def write_policy(request: Request, change):
+        """Apply one dashboard edit to policy.yaml: localhost only, validated before writing (a file the gateway would
+        reject is never written), comments kept, then reloaded, so it is versioned, audited and streamed like a hand edit."""
+        if (request.client.host if request.client else "") not in LOCAL:
+            raise HTTPException(403, "Policy edits are only accepted from localhost")
         try:
-            text = set_control_action(policy_path.read_text(), cid, body.action)
-            parse(text, policy_path.parent)  # never write a file the gateway would reject
+            text = change(policy_path.read_text())
+            parse(text, policy_path.parent)
         except ValueError as e:
             raise HTTPException(400, str(e))
         tmp = policy_path.with_suffix(".yaml.tmp")
@@ -118,8 +133,23 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         except OSError:  # e.g. a Docker Desktop bind mount on Windows refuses to rename over an open file
             policy_path.write_text(text)
             tmp.unlink(missing_ok=True)
+        return policies.get()
+
+    @app.post("/api/policy/models")
+    def approve_model(body: ModelRequest, request: Request):
+        """Add a model to the approved list (dashboard). It gets the lowest data class unless a higher one is chosen:
+        a new vendor sees no client data until someone decides it may."""
         p = policies.get()
-        return {"version": p.version, "control": cid, "action": p.action(cid)}
+        cls = body.max_class or p.classification.get("default", "internal")
+        if cls not in p.levels:
+            raise HTTPException(400, f"max_class must be one of {p.levels}")
+        p = write_policy(request, lambda text: add_model(text, body.model, body.upstream, cls))
+        return {"version": p.version, "model": body.model, "settings": p.models.get(body.model)}
+
+    @app.delete("/api/policy/models/{model:path}")
+    def remove_approved_model(model: str, request: Request):
+        p = write_policy(request, lambda text: remove_model(text, model))
+        return {"version": p.version, "removed": model}
 
     last_poll = [0.0]
 
