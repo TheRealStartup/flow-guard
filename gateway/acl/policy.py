@@ -130,6 +130,34 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
     return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents)
 
 
+def set_control_action(text: str, cid: str, action: str) -> str:
+    """Return policy.yaml text with `controls.<cid>.action` set to `action`, touching only that value, so the
+    file's comments and layout survive (a YAML round-trip would drop them). Raises ValueError if it can't."""
+    if action not in ACTIONS:
+        raise ValueError(f"action must be one of {ACTIONS}")
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, ln in enumerate(lines) if re.match(r"controls:\s*(#.*)?$", ln)), None)
+    if start is None:
+        raise ValueError("policy.yaml has no controls section")
+    key = re.compile(rf"^  {re.escape(cid)}:")
+    for i in range(start + 1, len(lines)):
+        ln = lines[i]
+        if ln.strip() and not ln.startswith(" ") and not ln.lstrip().startswith("#"):
+            break  # next top-level key: the controls section ended
+        if not key.match(ln):
+            continue
+        # Inline mapping on the key's line ({action: redact, ...}), else the indented block below it.
+        for j in range(i, len(lines)):
+            if j > i and lines[j].strip() and not lines[j].startswith("    ") and not lines[j].lstrip().startswith("#"):
+                break
+            m = re.search(r"(\baction:\s*)([A-Za-z]+)", lines[j].split("#", 1)[0])
+            if m:
+                lines[j] = lines[j][: m.start(2)] + action + lines[j][m.end(2):]
+                return "".join(lines)
+        raise ValueError(f"control {cid} has no action to change")
+    raise ValueError(f"no control {cid!r} in policy.yaml")
+
+
 def diff(old: Policy | None, new: Policy) -> list[dict[str, Any]]:
     """What a reload changed, field by field, in the *effective* controls (after the profile is applied)."""
     if old is None:

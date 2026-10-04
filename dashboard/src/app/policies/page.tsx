@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { History, Radio, RefreshCw, Route, TriangleAlert, X } from "lucide-react";
+import { History, Radio, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { usePoll, type Action, type ControlConfig, type PolicyChange } from "@/lib/api";
 import { useAuditEvents, useOnPolicyChange, usePolicyLive } from "@/lib/stream";
 import { CONTROLS, OWASP, OWASP_LLM, utcTime } from "@/lib/format";
-import { ActionPill, Panel, PanelHeader, Pill, SectionLabel } from "@/components/kit";
+import { Panel, PanelHeader } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
 type Details = {
@@ -26,23 +26,6 @@ type Details = {
   barriers: { public_message: string; restricted: { terms: number }[] };
   signatures: { id: string; where: string[]; ref: string }[];
 };
-
-const PROFILES = ["strict", "balanced", "permissive"];
-
-/** Effective controls if `profile` were active: base controls plus that profile's overrides. */
-function applyProfile(d: Details, profile: string) {
-  const out: Record<string, ControlConfig> = JSON.parse(JSON.stringify(d.base_controls));
-  for (const [id, patch] of Object.entries(d.profiles[profile] ?? {})) out[id] = { ...(out[id] ?? { action: "allow" }), ...patch } as ControlConfig;
-  return out;
-}
-
-function diffControls(a: Record<string, ControlConfig>, b: Record<string, ControlConfig>): PolicyChange[] {
-  const out: PolicyChange[] = [];
-  for (const id of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort())
-    for (const k of [...new Set([...Object.keys(a[id] ?? {}), ...Object.keys(b[id] ?? {})])].sort())
-      if (JSON.stringify(a[id]?.[k]) !== JSON.stringify(b[id]?.[k])) out.push({ what: `${id}.${k}`, old: a[id]?.[k], new: b[id]?.[k] });
-  return out;
-}
 
 /** The one-line "what does this control check, with which settings" column. */
 function settingsOf(id: string, c: ControlConfig, d: Details): string {
@@ -90,8 +73,28 @@ export default function PoliciesPage() {
   const { reload } = details;
   useOnPolicyChange(useCallback(() => reload(), [reload]));
   const { data: events, updatedAt } = useAuditEvents();
-  const [preview, setPreview] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+
+  // The gateway writes the action into policy.yaml and reloads; the stream then refreshes this page.
+  async function setAction(id: string, action: Action) {
+    setPending(id);
+    setToggleError(null);
+    try {
+      const r = await fetch(`/api/policy/controls/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!r.ok) setToggleError(`${id}: ${((await r.json().catch(() => null)) as { detail?: string } | null)?.detail ?? `error ${r.status}`}`);
+      reload();
+    } catch {
+      setToggleError(`${id}: the gateway could not be reached`);
+    } finally {
+      setPending(null);
+    }
+  }
 
   const d = details.data;
   // "Now" comes from the feed (it ticks while live), so renders stay pure. Counts cover a rolling 24 hours.
@@ -113,7 +116,7 @@ export default function PoliciesPage() {
       <div className="mb-8 flex flex-wrap items-baseline gap-x-5 gap-y-2">
         <h1 className="text-[32px] leading-tight font-normal">Policy</h1>
         <p className="max-w-2xl text-[17px] text-muted-foreground">
-          What is enforced right now. When someone edits <span className="font-mono text-[15px] text-foreground">policy.yaml</span>, this page shows the new version and what
+          What is enforced right now. Change an action below or edit <span className="font-mono text-[15px] text-foreground">policy.yaml</span>: this page shows the new version and what
           changed, without a restart.
         </p>
         <span className="ml-auto flex items-center gap-2 text-[15px] text-muted-foreground">
@@ -148,54 +151,25 @@ export default function PoliciesPage() {
         </div>
       )}
 
-      <Panel className="mb-6 px-6 py-5">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          <div className="flex items-baseline gap-3">
-            <h2 className="text-lg font-semibold">Active profile</h2>
-            <span className="text-[15px] text-muted-foreground">set in policy.yaml (read-only here)</span>
-          </div>
-          <div className="inline-flex overflow-hidden rounded-md border" role="radiogroup" aria-label="Profiles">
-            {PROFILES.map((p) => {
-              const active = d?.profile === p;
-              return (
-                <button
-                  key={p}
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setPreview(active || preview === p ? null : p)}
-                  title={active ? "Active profile" : `Preview what ${p} would change`}
-                  className={cn(
-                    "border-r px-4 py-2 text-[15px] last:border-r-0",
-                    active ? "bg-primary text-primary-foreground" : preview === p ? "bg-selected" : "bg-card hover:bg-accent",
-                  )}
-                >
-                  {p}
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-sm text-muted-foreground">
-            If a check fails or times out: <b className="font-medium text-foreground">{d?.defaults.on_error ?? "block"}</b> (fail {d?.defaults.on_error === "allow" ? "open" : "closed"})
+      <Panel className="mb-6 overflow-hidden">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-6 pt-5 pb-4">
+          <h2 className="text-lg font-semibold">Controls</h2>
+          <span className="text-[15px] text-muted-foreground">
+            profile {d?.profile ?? "…"} · click an action to change it (written to policy.yaml, audited like any edit)
+          </span>
+          <span className="ml-auto text-sm text-muted-foreground">
+            If a check fails: <b className="font-medium text-foreground">{d?.defaults.on_error ?? "block"}</b> · Fired = blocked, redacted or flagged in the last 24 h
           </span>
         </div>
-        {d && preview && <ProfilePreview d={d} profile={preview} onClose={() => setPreview(null)} />}
-        {d && !preview && Object.keys(d.profiles[d.profile] ?? {}).length > 0 && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            {d.profile} overrides {Object.keys(d.profiles[d.profile]).length} control{Object.keys(d.profiles[d.profile]).length === 1 ? "" : "s"}, marked below. Click another
-            profile to preview what switching would change.
-          </p>
+        {toggleError && (
+          <div className="mx-6 mb-4 flex items-start gap-2 rounded-md bg-block-soft px-4 py-2.5 text-sm text-block">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            <span className="flex-1">{toggleError}</span>
+            <button onClick={() => setToggleError(null)} aria-label="Dismiss">
+              <X className="size-4" />
+            </button>
+          </div>
         )}
-        {d && !preview && !Object.keys(d.profiles[d.profile] ?? {}).length && (
-          <p className="mt-3 text-sm text-muted-foreground">{d.profile} uses the base controls unchanged. Click another profile to preview what switching would change.</p>
-        )}
-      </Panel>
-
-      <Panel className="mb-6 overflow-hidden">
-        <div className="flex items-baseline gap-3 px-6 pt-5 pb-4">
-          <h2 className="text-lg font-semibold">Controls</h2>
-          <span className="text-[15px] text-muted-foreground">after the profile is applied</span>
-          <span className="ml-auto text-sm text-muted-foreground">Block beats redact beats flag. Fired = blocked, redacted or flagged in the last 24 hours.</span>
-        </div>
         <table className="w-full text-left text-[15px]">
           <thead className="border-y bg-muted text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             <tr>
@@ -221,14 +195,12 @@ export default function PoliciesPage() {
                       <span className={cn("rounded border px-1.5 py-0.5 text-xs", id === "injection.jev" ? "border-redact/40 text-redact" : "text-muted-foreground")}>{kindOf(id)}</span>
                     </td>
                     <td className="py-3 pr-3">
-                      <div className="flex flex-col items-start gap-1">
-                        <ActionPill action={c.action as Action} />
-                        {override && (
-                          <span className="text-[11px] text-muted-foreground" title={JSON.stringify(override)}>
-                            set by {d.profile}
-                          </span>
-                        )}
-                      </div>
+                      <ActionToggle
+                        value={c.action as Action}
+                        pending={pending === id}
+                        locked={override && "action" in override ? `The ${d.profile} profile sets this action. Change profiles.${d.profile} in policy.yaml.` : null}
+                        onChange={(a) => setAction(id, a)}
+                      />
                     </td>
                     <td className="py-3 pr-3 text-muted-foreground">{settingsOf(id, c, d)}</td>
                     <td className="py-3 pr-4 text-right font-mono tabular-nums">{fired.get(id) ?? 0}</td>
@@ -255,10 +227,8 @@ export default function PoliciesPage() {
 
       {d && (
         <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-2">
-          <Sinks d={d} />
           <Models d={d} />
           <Budgets d={d} />
-          <Signatures d={d} />
         </div>
       )}
     </>
@@ -282,58 +252,6 @@ const fmt = (v: unknown) => {
   const s = JSON.stringify(v);
   return s === undefined ? "—" : s.length > 80 ? s.slice(0, 77) + "…" : s;
 };
-
-function ProfilePreview({ d, profile, onClose }: { d: Details; profile: string; onClose: () => void }) {
-  const changes = diffControls(d.controls, applyProfile(d, profile));
-  return (
-    <div className="mt-4 rounded-md border bg-muted px-4 py-3">
-      <div className="mb-2 flex items-baseline gap-2">
-        <span className="font-medium">
-          Switching to {profile} would change {changes.length} setting{changes.length === 1 ? "" : "s"}
-        </span>
-        <span className="text-sm text-muted-foreground">
-          preview only · edit <span className="font-mono">active_profile: {profile}</span> to apply
-        </span>
-        <button className="ml-auto p-1 text-muted-foreground hover:text-foreground" onClick={onClose} aria-label="Close preview">
-          <X className="size-4" />
-        </button>
-      </div>
-      {changes.length ? <ChangeList changes={changes} /> : <div className="text-sm text-muted-foreground">Nothing: same controls as now.</div>}
-    </div>
-  );
-}
-
-function Sinks({ d }: { d: Details }) {
-  return (
-    <Panel>
-      <PanelHeader icon={<Route className="size-5" />} title="Data sinks" />
-      <div className="flex flex-col gap-4 px-6 py-5">
-        <div>
-          <SectionLabel className="mb-1">External · data leaves here</SectionLabel>
-          <div className="flex flex-wrap gap-1">
-            {(d.sinks.external ?? []).map((t) => (
-              <Pill key={t} tone="block" dot={false} className="font-mono text-xs">
-                {t}
-              </Pill>
-            ))}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">Calls carrying tokens or MNPI are blocked ({String(d.controls["flow.sensitive_to_external"]?.mode ?? "value")} mode).</p>
-        </div>
-        <div>
-          <SectionLabel className="mb-1">Real values released to</SectionLabel>
-          <div className="flex flex-wrap gap-1">
-            {(d.sinks.detokenize ?? []).map((t) => (
-              <Pill key={t} tone="flag" dot={false} className="font-mono text-xs">
-                {t}
-              </Pill>
-            ))}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">Only these tools get the card number, IBAN or passport back; everything else sees tokens.</p>
-        </div>
-      </div>
-    </Panel>
-  );
-}
 
 function Models({ d }: { d: Details }) {
   return (
@@ -379,23 +297,37 @@ function Budgets({ d }: { d: Details }) {
   );
 }
 
-function Signatures({ d }: { d: Details }) {
+const TOGGLE: Record<Action, string> = {
+  allow: "bg-allow-soft text-allow",
+  flag: "bg-flag-soft text-flag",
+  redact: "bg-redact-soft text-redact",
+  block: "bg-block-soft text-block",
+};
+
+/** Allow · Flag · Redact · Block for one control; the active one carries its decision colour. */
+function ActionToggle({ value, pending, locked, onChange }: { value: Action; pending: boolean; locked: string | null; onChange: (a: Action) => void }) {
   return (
-    <Panel>
-      <PanelHeader title="Threat signatures" count={d.signatures.length}>
-        <span className="font-mono text-xs text-muted-foreground">{String(d.controls.signatures?.feed ?? "")}</span>
-      </PanelHeader>
-      <ul className="max-h-64 divide-y overflow-y-auto">
-        {d.signatures.map((s) => (
-          <li key={s.id} className="px-6 py-2.5" title={s.ref}>
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-sm">{s.id}</span>
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">{s.where.join(", ")}</span>
-            </div>
-            <div className="truncate text-xs text-muted-foreground">{s.ref}</div>
-          </li>
-        ))}
-      </ul>
-    </Panel>
+    <div
+      role="radiogroup"
+      aria-label="Action"
+      title={locked ?? undefined}
+      className={cn("inline-flex overflow-hidden rounded-md border text-xs", pending && "opacity-60", locked && "opacity-70")}
+    >
+      {(["allow", "flag", "redact", "block"] as Action[]).map((a) => (
+        <button
+          key={a}
+          role="radio"
+          aria-checked={value === a}
+          disabled={pending || !!locked || value === a}
+          onClick={() => onChange(a)}
+          className={cn(
+            "border-r px-2 py-1 capitalize last:border-r-0 disabled:cursor-default",
+            value === a ? cn(TOGGLE[a], "font-semibold") : "bg-card text-muted-foreground enabled:hover:bg-accent",
+          )}
+        >
+          {a}
+        </button>
+      ))}
+    </div>
   );
 }

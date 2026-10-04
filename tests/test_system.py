@@ -327,6 +327,25 @@ def test_policy_details_for_the_policy_page(gw):
     assert gw.client.get("/api/policy/details").json()["controls"]["injection.jev"]["threshold"] == 0.5
 
 
+def test_dashboard_action_toggle_edits_only_that_value(gw):
+    before = gw.policy_path.read_text()
+    r = gw.client.post("/api/policy/controls/pii.iban", json={"action": "flag"})
+    assert r.status_code == 200 and r.json()["action"] == "flag"
+    r = gw.client.post("/api/policy/controls/injection.jev", json={"action": "block"})  # block-style mapping
+    assert r.json()["action"] == "block"
+    after = gw.policy_path.read_text()
+    changed = [(a, b) for a, b in zip(before.splitlines(), after.splitlines()) if a != b]
+    assert len(changed) == 2 and len(before.splitlines()) == len(after.splitlines())  # nothing else moved
+    assert {"what": "controls.pii.iban.action", "old": "redact", "new": "flag"} in gw.client.get("/api/events?type=policy_change").json()[1]["changes"]
+
+
+def test_dashboard_action_toggle_refuses_profile_owned_and_bad_input(gw):
+    gw.edit_policy(lambda p: p.update(active_profile="strict"))
+    assert gw.client.post("/api/policy/controls/secrets", json={"action": "allow"}).status_code == 409  # strict sets it
+    assert gw.client.post("/api/policy/controls/pii.card", json={"action": "nuke"}).status_code == 400
+    assert gw.client.post("/api/policy/controls/no.such", json={"action": "allow"}).status_code == 404
+
+
 def test_rejected_policy_edit_is_reported_in_history(gw):
     gw.policy_path.write_text("active_profile: does-not-exist\n")
     os.utime(gw.policy_path, None)
