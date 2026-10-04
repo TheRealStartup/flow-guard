@@ -229,6 +229,26 @@ classification:
   # is never fetched for nothing, and the agent never holds it. Other tools are fetched and their results withheld.
   block_calls_above_limit: [get_employee]
 
+# Integrity: who can write a tool's results (docs/decisions.md D10). Classification above says who may READ data;
+# integrity says whose words a result may carry. The injection check (Jev) looks for instructions planted by an outsider,
+# so it checks only results an outsider can write: "external" (a client's document, an email, a web page, a public
+# register). "bank" results are written only by the bank's own systems (a screening verdict, a case record, a
+# submission receipt): there is no outsider's text in them to check, and checking them only produced false alarms.
+# Signatures, redaction, the class gate and spotlighting still apply to every result. Unlisted tools are external, and a
+# result counts as "bank" only when this gateway let the call through to that tool (the agent's own label never does).
+integrity:
+  default: external                  # must stay external: nothing is trusted unless listed here
+  tools:
+    mcp__hub__get_case: bank         # the bank's case record (captured and verified by staff)
+    mcp__hub__list_document_requirements: bank
+    mcp__hub__submit_for_approval: bank
+    mcp__screening__screen_party: bank      # the screening system's own verdict
+    mcp__screening__resolve_result: bank
+    mcp__mail__send_email: bank      # the send receipt, not the mail itself
+    screen_sanctions: bank
+    # external on purpose: mcp__hub__get_document and get_client_file (documents the client submitted),
+    # mcp__lei__search (a public register), read_file / Read / WebFetch / Bash (anyone could have written the file or page)
+
 # Data lake. The agent never writes a query: it names one from this catalog. A query the user's role may not run, or
 # whose result could not be sent on (to the model, and to Jev while the AI check is on), is refused before it runs,
 # with the same neutral reason in every case. Each result carries the lake's own class label; a missing label or one

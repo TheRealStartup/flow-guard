@@ -275,6 +275,17 @@ class Engine:
         return p.tool_class(name)
 
     @staticmethod
+    def _integrity(p: Policy, s: Session, msg: dict[str, Any], claimed: dict[str, tuple[str, str]]) -> str:
+        """Who could have written a tool result (D10). "bank" only for a call this gateway let through, to a tool the
+        policy lists as bank-written, answered under the same name: the agent's own claim about a result never earns
+        trust, so history the gateway did not see, or a mismatched call id, is external and checked."""
+        cid = msg.get("tool_call_id")
+        issued, named = s.issued.get(cid), claimed.get(cid)
+        if not issued or (named and named[0] != issued[0]):
+            return "external"
+        return p.tool_integrity(issued[0])
+
+    @staticmethod
     def _lake_class(p: Policy, msg: dict[str, Any], args: str) -> str | None:
         """A data-lake result has the class of the named query that was run (its dataset or transformation). The lake
         labels every result; a missing label, or one that differs from the catalog, leaves it unclassified (withheld)."""
@@ -496,7 +507,15 @@ class Engine:
             for d in ex.decisions[mark:]:
                 d.source = d.source or label
             if h not in s.judged and where in ("prompt", "tool_result") and msg.get("role") != "system":
-                to_judge.append((msg, h, where, rank))
+                if where == "tool_result" and self._integrity(p, s, msg, claimed) == "bank":
+                    # Written only by the bank's own systems: nothing an outsider wrote to check (D10). Signatures,
+                    # redaction and the class gate above still ran, and the result is still marked as data.
+                    if new and p.action("injection.jev") != "allow":
+                        ex.decisions.append(Decision("injection.jev", "allow", where,
+                                                     "not checked: written only by the bank's own system (integrity: bank)",
+                                                     source=label))
+                else:
+                    to_judge.append((msg, h, where, rank))
 
         if to_judge and p.action("injection.jev") != "allow":
             # Jev is an external destination too. What it may not receive cannot be checked, and an unchecked message
@@ -636,7 +655,8 @@ class Engine:
                         query = json.loads(args or "{}").get(p.datalake.get("argument", "query"))
                     except (ValueError, AttributeError):
                         query = None
-                    reach = min(p.model_limit(ex.model), p.judge_limit() if p.action("injection.jev") != "allow" else p.max_to_model)
+                    judged = p.action("injection.jev") != "allow" and p.tool_integrity(name) != "bank"
+                    reach = min(p.model_limit(ex.model), p.judge_limit() if judged else p.max_to_model)
                     if not p.may_query(s.user, query) or p.rank(p.query_class(query)) > reach:
                         ds.append(Decision("access.datalake", p.action("access.datalake"), where,
                                            "this query is not available; it never ran"))
