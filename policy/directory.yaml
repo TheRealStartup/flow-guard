@@ -1,0 +1,14 @@
+# The directory: WHO has which role, which clients they cover and which deals they are wall-crossed for.
+# policy.yaml holds only the rules about roles and data classes; it never names a person.
+#
+# This file is a stand-in for systems the bank already runs: the identity provider (single sign-on: who you are),
+# the entitlement system (your role), the CRM / client onboarding system (your clients) and the compliance control
+# room (your deals). In production these attributes arrive with each request (claims in the sign-on token) or are
+# looked up there; nobody maintains tens of thousands of people by hand. Reloaded live like the policy.
+users:
+  alice:  {role: support_junior}
+  bob:    {role: fraud_analyst}
+  olivia: {role: onboarding_analyst, side: public, assigned_clients: [NW-2041]}   # onboarding scenario
+  marcus: {role: mna_banker, side: private, deals: [falcon]}                      # onboarding scenario
+  devon:  {role: developer}                                                       # developer scenario (stub)
+  hana:   {role: hr_admin, allowed_employees: [E-1001, E-1002]}                   # HR scenario: only these two personnel files

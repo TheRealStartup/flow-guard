@@ -123,7 +123,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             raise HTTPException(403, "Policy edits are only accepted from localhost")
         try:
             text = change(policy_path.read_text())
-            parse(text, policy_path.parent)
+            policies.check(text)
         except ValueError as e:
             raise HTTPException(400, str(e))
         tmp = policy_path.with_suffix(".yaml.tmp")

@@ -353,8 +353,14 @@ def _purpose_rules(controls: dict[str, dict]) -> list[PurposeRule]:
     return out
 
 
-def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None) -> Policy:
+def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str | None = None,
+          dir_text: str | None = None) -> Policy:
     raw = yaml.safe_load(text) or {}
+    if dir_text is not None:  # the directory (who has which role) lives in its own file; the policy holds only rules
+        people = (yaml.safe_load(dir_text) or {}).get("users") or {}
+        if not isinstance(people, dict):
+            raise ValueError("directory: `users` must be a mapping of user -> attributes")
+        raw["users"] = {**(raw.get("users") or {}), **people}
     profile = raw.get("active_profile", "balanced")
     profiles = raw.get("profiles", {})
     if profile not in profiles:
@@ -388,7 +394,8 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
         idents[str(i["key_sha256"]).lower()] = {"user": str(i["user"]), "agent": str(i.get("agent", "unknown-agent")),
                                                 **({"purpose": str(i["purpose"])} if i.get("purpose") else {})}
 
-    digest = hashlib.sha256(text.encode() + (sig_text or "").encode() + (keys_text or "").encode()).hexdigest()[:8]
+    digest = hashlib.sha256(text.encode() + (sig_text or "").encode() + (keys_text or "").encode()
+                            + (dir_text or "").encode()).hexdigest()[:8]
     return Policy(raw, f"{raw.get('version', '?')}@{digest}", profile, controls, sigs, idents, purpose_rules)
 
 
@@ -512,11 +519,15 @@ class PolicyStore:
         if self.on_change:
             self.on_change(self.history[-1])
 
-    def _side_files(self, raw: dict) -> tuple[Path | None, Path | None]:
-        """The signature feed and the identities file, both named in policy.yaml and watched too."""
-        feed = raw.get("controls", {}).get("signatures", {}).get("feed")
-        keys = raw.get("identity", {}).get("keys_file")
-        return (self.path.parent / feed if feed else None, self.path.parent / keys if keys else None)
+    def _side_files(self, raw: dict) -> tuple[Path | None, Path | None, Path | None]:
+        """The signature feed, the API keys and the directory (who has which role), all named in policy.yaml and watched."""
+        names = (raw.get("controls", {}).get("signatures", {}).get("feed"), raw.get("identity", {}).get("keys_file"),
+                 raw.get("identity", {}).get("directory_file"))
+        return tuple(self.path.parent / n if n else None for n in names)  # type: ignore[return-value]
+
+    def check(self, text: str) -> Policy:
+        """Parse a candidate policy.yaml with the current side files, exactly as a reload would (raises ValueError)."""
+        return parse(text, self.path.parent, *map(self._read, self._side_files(yaml.safe_load(text) or {})))
 
     @staticmethod
     def _mtime(p: Path | None) -> float:
@@ -527,7 +538,7 @@ class PolicyStore:
         return p.read_text() if p and p.exists() else None
 
     def get(self) -> Policy:
-        side = self._side_files(self._policy.raw) if self._policy else (None, None)
+        side = self._side_files(self._policy.raw) if self._policy else (None, None, None)
         try:
             stamp = (self.path.stat().st_mtime, *map(self._mtime, side))
         except OSError:  # an editor saving by delete + rename: the file is gone for a moment
@@ -537,8 +548,7 @@ class PolicyStore:
         if self._policy is None or stamp != self._stamp:
             try:
                 text = self.path.read_text()
-                feed, keys = self._side_files(yaml.safe_load(text) or {})
-                new = parse(text, self.path.parent, self._read(feed), self._read(keys))
+                new = parse(text, self.path.parent, *map(self._read, self._side_files(yaml.safe_load(text) or {})))
                 old, self._policy = self._policy, new
                 self.last_error = None
                 if old is None or old.version != new.version:

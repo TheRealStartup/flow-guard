@@ -118,16 +118,10 @@ budgets:
 identity:
   mode: api_key
   keys_file: identities.yaml
+  directory_file: directory.yaml   # who has which role, clients and deals (stand-in for the bank's identity systems)
   require_purpose: true     # every request states why (X-Purpose header); recorded in the audit log
 
-# What each user's role may do.
-users:
-  alice:  {role: support_junior}
-  bob:    {role: fraud_analyst}
-  olivia: {role: onboarding_analyst, side: public, assigned_clients: [NW-2041]}   # onboarding scenario
-  marcus: {role: mna_banker, side: private, deals: [falcon]}                      # onboarding scenario
-  devon:  {role: developer}                                                       # developer scenario (stub)
-  hana:   {role: hr_admin, allowed_employees: [E-1001, E-1002]}                   # HR scenario: only these two personnel files
+# What each role may do. Who has which role is not in this file: see directory.yaml.
 roles:
   support_junior:     {tools: [get_customer, send_email]}
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}

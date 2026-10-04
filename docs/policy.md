@@ -1,14 +1,20 @@
 # The policy file
 
-One file decides everything the gateway does: [`policy/policy.yaml`](../policy/policy.yaml), plus two files it names
-(the attack-signature feed [`policy/signatures.json`](../policy/signatures.json) and the API-key list
-[`policy/identities.yaml`](../policy/identities.yaml)). Nothing about what is allowed lives in code.
+One file decides everything the gateway does: [`policy/policy.yaml`](../policy/policy.yaml), plus three files it names:
+the attack-signature feed [`policy/signatures.json`](../policy/signatures.json), the API-key list
+[`policy/identities.yaml`](../policy/identities.yaml) and the directory [`policy/directory.yaml`](../policy/directory.yaml).
+Nothing about what is allowed lives in code.
 
-**Live, safe reload.** The gateway re-reads the three files when they change; no restart. A broken edit (bad YAML,
+**Rules vs. people.** `policy.yaml` speaks only about roles, data classes and destinations; it never names a person.
+Who has which role, which clients they cover and which deals they are wall-crossed for is in `directory.yaml`, a
+stand-in for the bank's identity provider, entitlement system, CRM and compliance control room. In production those
+attributes arrive with each request (claims in the sign-on token) or are looked up there.
+
+**Live, safe reload.** The gateway re-reads the four files when they change; no restart. A broken edit (bad YAML,
 unknown action, invalid regex, missing profile) is rejected and the **last good policy stays active**, so a typo never
 switches controls off. The dashboard's Policies page and `GET /api/policy/history` show the error.
 
-**Every decision names its policy.** The policy version is the declared `version` plus a hash of all three files
+**Every decision names its policy.** The policy version is the declared `version` plus a hash of all four files
 (`0.2@1a2b3c4d`). Each audit entry records it, and each change is itself an audit entry (`policy_change`) listing what
 changed, field by field, in the effective controls. "Which rule blocked this, and who had changed it that morning?"
 has an answer.
