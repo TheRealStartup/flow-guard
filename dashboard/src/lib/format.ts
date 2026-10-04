@@ -22,6 +22,32 @@ export const CONTROLS: Record<string, { name: string; kind: string; scope: strin
 
 export const controlName = (id: string) => CONTROLS[id]?.name ?? id;
 
+// OWASP Top 10 for LLM Applications (2025) categories each control addresses.
+export const OWASP_LLM: Record<string, string> = {
+  LLM01: "Prompt injection",
+  LLM02: "Sensitive information disclosure",
+  LLM03: "Supply chain",
+  LLM05: "Improper output handling",
+  LLM06: "Excessive agency",
+  LLM10: "Unbounded consumption",
+};
+export const OWASP: Record<string, string[]> = {
+  "models.allowlist": ["LLM03"],
+  budget: ["LLM10"],
+  "pii.card": ["LLM02"],
+  "pii.iban": ["LLM02"],
+  "pii.pesel": ["LLM02"],
+  "pii.passport": ["LLM02"],
+  secrets: ["LLM02"],
+  signatures: ["LLM03", "LLM01"],
+  "access.tools": ["LLM06"],
+  "access.scope": ["LLM06"],
+  "barrier.mnpi": ["LLM02"],
+  "flow.sensitive_to_external": ["LLM02", "LLM06"],
+  "injection.jev": ["LLM01"],
+  spotlight: ["LLM01", "LLM05"],
+};
+
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   allowed: "Allowed",
   redacted: "Redacted",

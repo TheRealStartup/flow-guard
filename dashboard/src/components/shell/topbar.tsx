@@ -5,7 +5,7 @@ import { ChevronRight, TriangleAlert } from "lucide-react";
 import { usePoll, type Health } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const TITLES: Record<string, string> = { "/audit": "Audit trail", "/demo": "Live demo" };
+const TITLES: Record<string, string> = { "/overview": "Overview", "/audit": "Audit trail", "/demo": "Live demo", "/policies": "Policies" };
 
 export function Topbar() {
   const path = usePathname();

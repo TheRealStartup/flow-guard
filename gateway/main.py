@@ -5,13 +5,15 @@ ANTHROPIC_BASE_URL=http://localhost:8000 (`just claude-code`).
 Interactive API docs for the dashboard: http://localhost:8000/docs
 """
 
+import asyncio
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from acl import tryit
@@ -21,14 +23,19 @@ from acl.adapters.llm_proxy import router as llm_router
 from acl.detectors.demo import DemoJudge
 from acl.detectors.jev import JevJudge, Judge
 from acl.engine import Engine
-from acl.policy import PolicyStore
+from acl.policy import PolicyStore, parse, set_control_action
 from acl.state import AuditLog
+from acl.stream import audit_stream
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
 POLICY = Path(os.getenv("ACL_POLICY", ROOT / "policy" / "policy.yaml"))
 AUDIT = Path(os.getenv("ACL_AUDIT", ROOT / "gateway" / "data" / "audit.jsonl"))
 LOCAL = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+class ActionRequest(BaseModel):
+    action: str  # allow | flag | redact | block
 
 
 class TryRequest(BaseModel):
@@ -63,6 +70,72 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         p = policies.get()
         return {"version": p.version, "profile": p.profile, "controls": p.controls, "error": policies.last_error,
                 "signatures": [s.id for s in p.signatures], "last_change": policies.history[-1] if policies.history else None}
+
+    @app.get("/api/policy/details")
+    def policy_details():
+        """Everything the Policy page shows, structured: base controls and profile overrides, models, budgets,
+        roles, users, sinks, scopes, barriers, signatures, identities. Leaves out key hashes and the restricted
+        deals' ids and terms (naming a deal would itself leak it)."""
+        p = policies.get()
+        raw = p.raw
+        barriers = raw.get("barriers", {})
+        # Deal ids are codenames: report how many deals a user is cleared for, never which.
+        users = {u: {**{k: v for k, v in info.items() if k != "deals"}, **({"deals": len(info["deals"])} if "deals" in info else {})}
+                 for u, info in raw.get("users", {}).items()}
+        return {
+            "version": p.version, "profile": p.profile, "error": policies.last_error,
+            "defaults": raw.get("defaults", {}),
+            "base_controls": raw.get("controls", {}), "profiles": raw.get("profiles", {}), "controls": p.controls,
+            "models": p.models, "budgets": raw.get("budgets", {}),
+            "identity": {**p.identity, "keys": sorted(p.identities.values(), key=lambda i: i["user"])},
+            "users": users, "roles": raw.get("roles", {}), "sinks": raw.get("sinks", {}),
+            "scopes": raw.get("scopes", {}),
+            "barriers": {"public_message": p.barrier_message,
+                         "restricted": [{"terms": len(r.get("terms", []))} for r in barriers.get("restricted", [])]},
+            "signatures": [{"id": s.id, "where": s.where, "ref": s.ref} for s in p.signatures],
+        }
+
+    @app.post("/api/policy/controls/{cid}")
+    def set_action(cid: str, body: ActionRequest, request: Request):
+        """Change one control's action from the dashboard. Writes only that value in policy.yaml (comments stay),
+        then reloads: the change is versioned, audited and streamed exactly like a hand edit. Local only."""
+        if (request.client.host if request.client else "") not in LOCAL:
+            raise HTTPException(403, "Policy edits are only accepted from localhost")
+        p = policies.get()
+        if cid not in p.raw.get("controls", {}):
+            raise HTTPException(404, f"no control {cid!r}")
+        if "action" in (p.raw.get("profiles", {}).get(p.profile, {}).get(cid) or {}):
+            raise HTTPException(409, f"the active profile {p.profile!r} sets this action; edit profiles.{p.profile} in policy.yaml")
+        try:
+            text = set_control_action(policy_path.read_text(), cid, body.action)
+            parse(text, policy_path.parent)  # never write a file the gateway would reject
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        tmp = policy_path.with_suffix(".yaml.tmp")
+        tmp.write_text(text)
+        tmp.replace(policy_path)
+        p = policies.get()
+        return {"version": p.version, "control": cid, "action": p.action(cid)}
+
+    last_poll = [0.0]
+
+    async def poll_policy():
+        """At most once a second across all open streams; get() reloads the files if their mtime changed."""
+        if time.monotonic() - last_poll[0] >= 1.0:
+            last_poll[0] = time.monotonic()
+            await asyncio.to_thread(policies.get)
+
+    @app.get("/api/stream")
+    async def stream(request: Request, since: int | None = None, last_event_id: str | None = Header(None)):
+        """Server-Sent Events: each new audit entry as `event: audit` (id = seq, data = the same JSON as an
+        /api/events item), plus `event: policy` (the /api/policy payload) after a reload. `since=<seq>` or the
+        Last-Event-ID header (sent by EventSource on reconnect, and preferred) replays the entries after that seq."""
+        after = int(last_event_id) if last_event_id and last_event_id.strip().lstrip("-").isdigit() else since
+        return StreamingResponse(
+            audit_stream(engine.audit, after, request.is_disconnected, policy, poll_policy),
+            media_type="text/event-stream",
+            # no-transform + X-Accel-Buffering: ask proxies (Next.js rewrites, nginx) not to buffer or compress.
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
     @app.get("/api/policy/history")
     def policy_history():

@@ -15,7 +15,7 @@ services:
       - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
       - "127.0.0.1:${DASHBOARD_PORT:-3000}:3000"
     volumes:
-      - ./policy:/app/policy:ro
+      - ./policy:/app/policy   # writable: the Policies page can change a control's action (POST /api/policy/controls/{id}, localhost only)
       - audit-data:/app/gateway/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]

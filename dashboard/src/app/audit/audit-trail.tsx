@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Download, RefreshCw, RotateCcw, Search } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, Download, Radio, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { usePoll, type AuditEvent, type Outcome, type Verify } from "@/lib/api";
+import { useAuditEvents } from "@/lib/stream";
 import { eventTitle, utcDate, utcTime } from "@/lib/format";
 import { Btn, Field, OutcomePill, PageHeader, Panel, PanelHeader, Pill, Select, Stat, StatRow } from "@/components/kit";
 import { cn } from "@/lib/utils";
@@ -53,12 +54,14 @@ export function AuditTrail() {
   const [agent, setAgent] = useState("");
   const [user, setUser] = useState("");
   const [outcome, setOutcome] = useState("");
-  const [query, setQuery] = useState(params.get("session") ?? "");
+  const [query, setQuery] = useState(params.get("q") ?? params.get("session") ?? "");
   const [pageSize, setPageSize] = useState(12);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  // Past page 1, hide entries newer than this seq so live arrivals don't shift the rows being read.
+  const [frozenAt, setFrozenAt] = useState<number | null>(null);
 
-  const { data: events, updatedAt, error } = usePoll<AuditEvent[]>("/api/events?limit=5000", 2000);
+  const { data: events, updatedAt, error, live, fresh } = useAuditEvents();
   const { data: verify } = usePoll<Verify>("/api/audit/verify", 5000);
 
   const all = useMemo(() => events ?? [], [events]);
@@ -85,6 +88,7 @@ export function AuditTrail() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return inRange.filter((e) => {
+      if (frozenAt !== null && e.seq > frozenAt) return false;
       if (outcome === "policy_change" ? e.type !== "policy_change" : outcome && (e.type !== "exchange" || e.outcome !== outcome)) return false;
       if (action && !actionsOf(e).includes(action)) return false;
       if (agent && (e.type !== "exchange" || e.agent !== agent)) return false;
@@ -101,13 +105,20 @@ export function AuditTrail() {
       ];
       return hay.some((h) => h?.toLowerCase().includes(q));
     });
-  }, [inRange, outcome, action, agent, user, query]);
+  }, [inRange, outcome, action, agent, user, query, frozenAt]);
 
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const current = Math.min(page, pages - 1);
   const visible = rows.slice(current * pageSize, current * pageSize + pageSize);
+  // Pin the default selection to the first row shown, so the detail panel doesn't jump to each new arrival.
+  if (selected === null && visible.length) setSelected(visible[0].seq);
   const detail = rows.find((e) => e.seq === selected) ?? visible[0] ?? null;
+  const newer = frozenAt === null ? 0 : all.filter((e) => e.seq > frozenAt).length;
 
+  const goPage = (p: number) => {
+    setPage(p);
+    setFrozenAt(p > 0 ? (frozenAt ?? all[0]?.seq ?? null) : null);
+  };
   const filtered = Boolean(action || agent || user || outcome || query);
   const reset = () => {
     setAction("");
@@ -115,11 +126,11 @@ export function AuditTrail() {
     setUser("");
     setOutcome("");
     setQuery("");
-    setPage(0);
+    goPage(0);
   };
   const set = (fn: (v: string) => void) => (v: string) => {
     fn(v);
-    setPage(0);
+    goPage(0);
   };
   const rangeLabel = RANGES.find((r) => r.value === range)!.label.toLowerCase();
 
@@ -179,8 +190,12 @@ export function AuditTrail() {
             Showing {filtered ? `${rows.length} matching events` : "all events"} · {rangeLabel}
           </span>
           <span className={cn("ml-auto flex items-center gap-2", error && "text-block")}>
-            <RefreshCw className="size-4" />
-            {error ? "Gateway unreachable, retrying" : updatedAt ? `Updated ${utcTime(updatedAt.getTime() / 1000, false)} UTC · Auto-refresh 2 s` : "Loading…"}
+            {live ? <Radio className="size-4 text-primary" /> : <RefreshCw className="size-4" />}
+            {error
+              ? "Gateway unreachable, retrying"
+              : updatedAt
+                ? `Updated ${utcTime(updatedAt.getTime() / 1000, false)} UTC · ${live ? "Live" : "Polling every 2 s"}`
+                : "Loading…"}
           </span>
         </div>
       </Panel>
@@ -188,6 +203,11 @@ export function AuditTrail() {
       <div className="flex items-start gap-6">
         <Panel className="min-w-0 flex-1 overflow-hidden">
           <PanelHeader title="Activity log" count={rows.length}>
+            {newer > 0 && (
+              <Btn onClick={() => goPage(0)} className="h-10">
+                <ArrowUp className="size-4" /> {newer} new {newer === 1 ? "event" : "events"}
+              </Btn>
+            )}
             <div className="relative w-80">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -219,8 +239,9 @@ export function AuditTrail() {
                     key={e.seq}
                     onClick={() => setSelected(e.seq)}
                     className={cn(
-                      "cursor-pointer border-b border-l-2 border-l-transparent last:border-b-0 hover:bg-selected/60",
-                      active && "border-l-primary bg-selected",
+                      "cursor-pointer border-b border-l-2 border-l-transparent transition-colors duration-700 last:border-b-0 hover:bg-selected/60 hover:duration-0",
+                      (active || fresh.has(e.seq)) && "bg-selected",
+                      active && "border-l-primary",
                     )}
                   >
                     <td className="py-3 pl-5">
@@ -263,14 +284,14 @@ export function AuditTrail() {
               value={String(pageSize)}
               onChange={(v) => {
                 setPageSize(Number(v));
-                setPage(0);
+                goPage(0);
               }}
               options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
             />
             <span className="ml-auto text-muted-foreground">
               {rows.length ? `${current * pageSize + 1}–${Math.min(rows.length, (current + 1) * pageSize)} of ${rows.length}` : "0 of 0"}
             </span>
-            <Pager page={current} pages={pages} onPage={setPage} />
+            <Pager page={current} pages={pages} onPage={goPage} />
           </div>
           <div className="border-t bg-muted px-5 py-3 text-sm text-muted-foreground">
             Masked by the gateway: card numbers, IBANs, national IDs and secrets never appear in this log, only tokens.
