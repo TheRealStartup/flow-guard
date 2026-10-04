@@ -40,27 +40,67 @@ OUT = ROOT / "bench" / "results"
 THRESHOLDS = {"strict": 0.50, "balanced": 0.80, "permissive": 0.95}
 
 
-def load_sets(n_deepset: int, n_jail: int) -> dict[str, list[tuple[str, int, str, str]]]:
-    """(case id, label 1=attack, source, text) per set. Fixed seed, so every run uses the same cases."""
+def _parquet(pattern: str, columns: list[str]) -> list[dict]:
     import pyarrow.parquet as pq
 
-    rng = random.Random(7)
+    rows: list[dict] = []
+    for f in sorted(Q.glob(pattern)):
+        rows += pq.read_table(f, columns=columns).to_pylist()
+    return rows
+
+
+def _sample(rows: list, n: int, seed: int) -> list:
+    rows = list(rows)
+    random.Random(seed).shuffle(rows)
+    return rows[:n] if n else rows
+
+
+def load_sets(n_deepset: int = 0, n_jail: int = 0, n_sample: int = 2000) -> dict[str, list[tuple[str, int, str, str]]]:
+    """(case id, label 1=attack, source, text) per set. Fixed seeds, so every run uses the same cases.
+    n_deepset / n_jail = 0 means all rows; n_sample is the sample size for the large real sets."""
     deepset = []
     for split in ("test", "train"):
-        t = pq.read_table(Q / f"deepset-prompt-injections-{split}.parquet").to_pylist()
+        t = _parquet(f"deepset-prompt-injections-{split}.parquet", ["text", "label"])
         deepset += [(f"deepset-{split}-{i}", int(r["label"]), r["text"]) for i, r in enumerate(t)]
-    rng.shuffle(deepset)
-    deepset = deepset[:n_deepset]
+    deepset = _sample(deepset, n_deepset, 7)
     rows = list(csv.DictReader(open(Q / "jackhhao-jailbreak-full.csv", encoding="utf-8")))
-    jail = [(f"jailbreak-{i}", int(r["type"] == "jailbreak"), r["prompt"]) for i, r in enumerate(rows)]
-    rng.shuffle(jail)
-    pos = [c for c in jail if c[1]][: n_jail // 2]
-    neg = [c for c in jail if not c[1]][: n_jail // 2]
+    jail = _sample([(f"jailbreak-{i}", int(r["type"] == "jailbreak"), r["prompt"]) for i, r in enumerate(rows)], 0, 7)
+    if n_jail:
+        jail = [c for c in jail if c[1]][: n_jail // 2] + [c for c in jail if not c[1]][: n_jail // 2]
+
+    # LLMail-Inject: real attack emails an email agent read. "successful" = the agent really sent data out
+    # (exfil.sent, .destination and .content all true in the challenge's own scoring). Deduplicated by text.
+    mail, seen = [], set()
+    for i, r in enumerate(_parquet("llmail-*.parquet", ["subject", "body", "objectives"])):
+        text = f"Subject: {r['subject'] or ''}\n\n{r['body'] or ''}"
+        if text in seen or not (r["body"] or "").strip():
+            continue
+        seen.add(text)
+        try:
+            o = json.loads(r["objectives"]) if isinstance(r["objectives"], str) else (r["objectives"] or {})
+        except ValueError:
+            o = {}
+        ok = all(o.get(k) for k in ("exfil.sent", "exfil.destination", "exfil.content"))
+        mail.append((f"llmail-{i}", ok, text))
+    mail_any = _sample(mail, n_sample // 2, 11)
+    mail_ok = _sample([m for m in mail if m[1]], n_sample // 2, 12)
+
+    notinject = [(f"notinject-{i}", r["prompt"]) for i, r in enumerate(_parquet("notinject-*.parquet", ["prompt"]))]
+    banking = []
+    for split in ("train", "test"):
+        banking += [(f"banking77-{split}-{i}", r["text"]) for i, r in enumerate(csv.DictReader(open(Q / f"banking77-{split}.csv", encoding="utf-8")))]
+    enron = [(f"enron-{i}", f"Subject: {r['subject'] or ''}\n\n{r['message'] or ''}")
+             for i, r in enumerate(_parquet("enron-*.parquet", ["subject", "message", "label"])) if r["label"] == 0 and (r["message"] or "").strip()]
     return {
         "deepset-prompt": [(cid, y, "prompt", t) for cid, y, t in deepset],
         "deepset-tool": [(cid, y, "tool_result", t) for cid, y, t in deepset],
-        "jailbreak": [(cid, y, "prompt", t) for cid, y, t in pos + neg],
-        "benign-tool": [(cid, 0, "tool_result", t) for cid, _, t in benign_items()],
+        "jailbreak": [(cid, y, "prompt", t) for cid, y, t in jail],
+        "llmail-any": [(cid, 1, "tool_result", t) for cid, _, t in mail_any],
+        "llmail-successful": [(cid, 1, "tool_result", t) for cid, _, t in mail_ok],
+        "notinject": [(cid, 0, "prompt", t) for cid, t in notinject],
+        "banking77": [(cid, 0, "prompt", t) for cid, t in _sample(banking, n_sample, 13)],
+        "enron-ham": [(cid, 0, "tool_result", t) for cid, t in _sample(enron, n_sample, 14)],
+        "synthetic-bank": [(cid, 0, "tool_result", t) for cid, _, t in benign_items()],
     }
 
 
@@ -72,7 +112,7 @@ class CachedJev:
             for line in CACHE.read_text().splitlines():
                 e = json.loads(line)
                 self.cache[e["key"]] = e
-        self.sem = asyncio.Semaphore(3)
+        self.sem = asyncio.Semaphore(10)
         self.last = 0.0
         self.calls = 0
         self.errors = 0
@@ -83,7 +123,7 @@ class CachedJev:
             e = self.cache[key]
             return e["p"], None
         async with self.sem:
-            wait = self.last + 0.33 - time.monotonic()  # about 3 calls per second
+            wait = self.last + 0.08 - time.monotonic()  # at most ~12 calls per second (official limit: 80)
             if wait > 0:
                 await asyncio.sleep(wait)
             self.last = time.monotonic()
@@ -134,8 +174,10 @@ def at(scores: list[tuple[float, int]], thr: float) -> dict:
             "fpr": fp / (fp + tn) if fp + tn else None}
 
 
-async def run(judges: list[str], n_deepset: int, n_jail: int) -> dict:
+async def run(judges: list[str], n_deepset: int, n_jail: int, only: list[str] | None = None) -> dict:
     sets = load_sets(n_deepset, n_jail)
+    if only:
+        sets = {k: v for k, v in sets.items() if k in only}
     jev = CachedJev() if "jev" in judges else None
     demo = DemoJudge()
     piguard = None
@@ -150,10 +192,21 @@ async def run(judges: list[str], n_deepset: int, n_jail: int) -> dict:
                 res = await asyncio.gather(*(jev.score(src, text) for _, _, src, text in cases))
             elif judge == "piguard":
                 res = []
-                for _, _, src, text in cases:
-                    t = time.perf_counter()
-                    p = piguard.score(text)
-                    res.append((p, (time.perf_counter() - t) * 1000))
+                pcache = ROOT / "bench" / "cache" / "piguard.jsonl"
+                known = {json.loads(ln)["key"]: json.loads(ln) for ln in pcache.read_text().splitlines()} if pcache.exists() else {}
+                pcache.parent.mkdir(parents=True, exist_ok=True)
+                with pcache.open("a") as fh:
+                    for _, _, src, text in cases:  # PIGuard does not use the source: one score per text
+                        key = hashlib.sha256(text.encode()).hexdigest()
+                        if key in known:
+                            res.append((known[key]["p"], None))
+                            continue
+                        t = time.perf_counter()
+                        p = piguard.score(text)
+                        ms = (time.perf_counter() - t) * 1000
+                        known[key] = {"key": key, "p": p, "ms": ms}
+                        fh.write(json.dumps(known[key]) + "\n")
+                        res.append((p, ms))
             else:
                 res = [((await demo.judge(text, src, 1)).injection, None) for _, _, src, text in cases]
             scored = [(p, y, cid) for (p, ms), (cid, y, _, _) in zip(res, cases) if p is not None]
@@ -207,13 +260,15 @@ def markdown(r: dict) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--judges", default="demo,jev")
-    ap.add_argument("--deepset", type=int, default=250)
-    ap.add_argument("--jailbreak", type=int, default=200)
+    ap.add_argument("--deepset", type=int, default=0, help="0 = all rows")
+    ap.add_argument("--jailbreak", type=int, default=0, help="0 = all rows")
+    ap.add_argument("--sets", default="", help="comma-separated subset of sets")
+    ap.add_argument("--out", default="injection", help="report name in bench/results/")
     a = ap.parse_args()
-    r = asyncio.run(run(a.judges.split(","), a.deepset, a.jailbreak))
+    r = asyncio.run(run(a.judges.split(","), a.deepset, a.jailbreak, [x for x in a.sets.split(",") if x] or None))
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "injection.json").write_text(json.dumps(r, indent=2))
-    (OUT / "injection.md").write_text(markdown(r))
+    (OUT / f"{a.out}.json").write_text(json.dumps(r, indent=2))
+    (OUT / f"{a.out}.md").write_text(markdown(r))
     print()
     print(markdown(r))
 

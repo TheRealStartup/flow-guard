@@ -32,8 +32,9 @@ class PIGuardModel(torch.nn.Module):
 class PIGuardJudge:
     """Same interface as the gateway's judges: judge(text, source, timeout_s) -> object with .injection in [0, 1]."""
 
-    def __init__(self, threads: int = 4):
+    def __init__(self, threads: int = 4, device: str | None = None):
         torch.set_num_threads(threads)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         raw = __import__("json").loads((DIR / "config.json").read_text())
         raw.pop("auto_map", None)
         raw["model_type"] = "deberta-v2"
@@ -46,15 +47,15 @@ class PIGuardJudge:
         unexpected = [k for k in unexpected if not k.startswith("pooler.")]  # saved, but their forward never uses it
         if [k for k in missing if not k.startswith("deberta.embeddings.position_ids")] or unexpected:
             raise RuntimeError(f"weights do not match the model: missing {missing[:5]}, unexpected {unexpected[:5]}")
-        self.model.eval()
+        self.model.to(self.device).eval()
 
     def score(self, text: str) -> float:
         ids = self.tok(text, add_special_tokens=False)["input_ids"] or [self.tok.unk_token_id]
         chunks = [ids[i:i + 510] for i in range(0, len(ids), 510)][:8]  # at most 8 chunks (~4k tokens)
         batch = [[self.tok.cls_token_id, *c, self.tok.sep_token_id] for c in chunks]
         width = max(map(len, batch))
-        input_ids = torch.tensor([b + [self.tok.pad_token_id] * (width - len(b)) for b in batch])
-        mask = torch.tensor([[1] * len(b) + [0] * (width - len(b)) for b in batch])
+        input_ids = torch.tensor([b + [self.tok.pad_token_id] * (width - len(b)) for b in batch], device=self.device)
+        mask = torch.tensor([[1] * len(b) + [0] * (width - len(b)) for b in batch], device=self.device)
         with torch.no_grad():
             probs = torch.softmax(self.model(input_ids, mask), dim=-1)[:, 1]
         return float(probs.max())

@@ -1,0 +1,465 @@
+{
+  "target_fpr_real_benign": 0.01,
+  "rules": {
+    "Jev": {
+      "threshold": 0.290000001,
+      "test": {
+        "llmail-successful": {
+          "recall": 0.9865125240847784,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.8759842519685039,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.8515625,
+          "fpr": 0.00909090909090909,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.6171875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.939297124600639,
+          "fpr": 0.0030120481927710845,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0050916496945010185,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.046242774566473986,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.2727272727272727,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      },
+      "test_at_policy_0.8": {
+        "llmail-successful": {
+          "recall": 0.7283236994219653,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.6062992125984252,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.5546875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.265625,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.8402555910543131,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.005780346820809248,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      }
+    },
+    "PIGuard (on-premise)": {
+      "threshold": 0.9997686753736267,
+      "test": {
+        "llmail-successful": {
+          "recall": 0.07321772639691715,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.08070866141732283,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.2578125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.2578125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.04792332268370607,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0010183299389002036,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.03468208092485549,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      },
+      "test_at_policy_0.8": {
+        "llmail-successful": {
+          "recall": 0.5953757225433526,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.5295275590551181,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.7421875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.7421875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.9648562300319489,
+          "fpr": 0.01355421686746988,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.016293279022403257,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.12716763005780346,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.22727272727272727,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      }
+    },
+    "average of both": {
+      "threshold": 0.5595386407838593,
+      "test": {
+        "llmail-successful": {
+          "recall": 0.8053949903660886,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.6732283464566929,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.7578125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.703125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.939297124600639,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0010183299389002036,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.057803468208092484,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.045454545454545456,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      },
+      "test_at_policy_0.8": {
+        "llmail-successful": {
+          "recall": 0.5626204238921002,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.4507874015748031,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.5703125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.375,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.8849840255591054,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.005780346820809248,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      }
+    },
+    "both must agree (min)": {
+      "threshold": 0.140000001,
+      "test": {
+        "llmail-successful": {
+          "recall": 0.884393063583815,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.7519685039370079,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.8125,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.71875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.9488817891373802,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0010183299389002036,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.07514450867052024,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.045454545454545456,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      },
+      "test_at_policy_0.8": {
+        "llmail-successful": {
+          "recall": 0.4662813102119461,
+          "fpr": null,
+          "n_pos": 519,
+          "n_neg": 0
+        },
+        "llmail-any": {
+          "recall": 0.37401574803149606,
+          "fpr": null,
+          "n_pos": 508,
+          "n_neg": 0
+        },
+        "deepset-tool": {
+          "recall": 0.46875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "deepset-prompt": {
+          "recall": 0.21875,
+          "fpr": 0.0,
+          "n_pos": 128,
+          "n_neg": 220
+        },
+        "jailbreak": {
+          "recall": 0.8402555910543131,
+          "fpr": 0.0,
+          "n_pos": 313,
+          "n_neg": 664
+        },
+        "enron-ham": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 982
+        },
+        "banking77": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 993
+        },
+        "notinject": {
+          "recall": null,
+          "fpr": 0.005780346820809248,
+          "n_pos": 0,
+          "n_neg": 173
+        },
+        "synthetic-bank": {
+          "recall": null,
+          "fpr": 0.0,
+          "n_pos": 0,
+          "n_neg": 22
+        }
+      }
+    }
+  }
+}
