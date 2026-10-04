@@ -257,8 +257,8 @@ export function AuditTrail() {
                     )}
                   >
                     <td className="py-3 pl-5">
-                      <div className="font-mono text-sm">{utcTime(e.ts)}</div>
-                      <div className="text-sm text-muted-foreground">{utcDate(e.ts)}</div>
+                      <div className="font-mono text-sm whitespace-nowrap">{utcTime(e.ts, false)}</div>
+                      <div className="text-sm whitespace-nowrap text-muted-foreground">{utcDate(e.ts)}</div>
                     </td>
                     <td className="truncate py-3 pr-4">
                       <div className="truncate font-medium">{title}</div>
