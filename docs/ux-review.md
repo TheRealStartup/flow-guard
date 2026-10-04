@@ -15,9 +15,10 @@ demo). This file is the work list. **Fixed** items are marked; everything else i
 - Policies: aligned budget table with readable role names; the scripted model labelled "test only"; Ollama/qwen gone.
 
 ## Open, ranked by impact on a judge
-1. **Rows name the next tool call, not what FlowGuard did** (/audit, /overview). "Get client file · Blocked" says
+1. **Fixed (feature/ux-rework):** the gateway serves a `summary` per entry (verdict, headline, plain reason); rows,
+   detail and the Overview list show it. ~~**Rows name the next tool call, not what FlowGuard did** (/audit, /overview). "Get client file · Blocked" says
    nothing about the scope rule. Add a reason line: "Client scope: AC-7730 is not olivia's client", "Hidden
-   instruction quarantined in the get_client_file result". Make the detail headline that sentence, not "Bash +1". (M)
+   instruction quarantined in the get_client_file result". Make the detail headline that sentence, not "Bash +1". (M)~~
 2. **One event, several labels.** The row says "Attack defused"; the detail badge for the same event says "Redacted"
    or "Blocked"; the tiles say "Attacks stopped" (Overview) and "Attacks defused" (Audit). One outcome set everywhere,
    identical badge in row and detail (terminology table below). (S)

@@ -55,7 +55,7 @@ export const OWASP: Record<string, string[]> = {
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   allowed: "Allowed",
-  redacted: "Redacted",
+  redacted: "Hidden",
   flagged: "Flagged",
   blocked: "Blocked",
 };
@@ -105,6 +105,21 @@ export function eventTitle(e: AuditEvent): { title: string; detail: string } {
   return { title: fromTool ? "Tool result to model" : "Prompt to model", detail: e.purpose ?? "Model request" };
 }
 
+/** What FlowGuard did (the gateway's headline), and what the agent was doing at the time. */
+export function eventLines(e: AuditEvent): { title: string; detail: string } {
+  if (e.type === "policy_change") return { title: e.summary?.headline ?? eventTitle(e).title, detail: eventTitle(e).detail };
+  const names = [...new Set((e.tool_calls ?? []).map((c) => c.name))];
+  const fromTool = e.decisions.some((d) => d.where === "tool_result");
+  const detail = names.length
+    ? `Tool call${names.length > 1 ? "s" : ""}: ${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2}` : ""}`
+    : e.model == null
+      ? "Request refused before any check"
+      : fromTool
+        ? "Tool result on its way to the model"
+        : "Prompt to the model";
+  return { title: e.summary?.headline ?? eventTitle(e).title, detail };
+}
+
 /** The most severe decision of an exchange: what the headline should say. */
 export function headline(e: ExchangeEvent): { tone: Outcome; title: string; body: string } | null {
   const block = e.decisions.find((d) => d.action === "block");
@@ -125,9 +140,9 @@ export function headline(e: ExchangeEvent): { tone: Outcome; title: string; body
 
 export function blockTitle(d: Decision) {
   if (d.control.startsWith("flow.")) return "Blocked before it left";
-  if (d.control === "identity") return "Denied at the door";
-  if (d.control === "budget") return "Stopped by the budget";
-  if (d.where.startsWith("tool_call")) return "Stopped before it ran";
+  if (d.control === "identity") return "Blocked at the door";
+  if (d.control === "budget") return "Blocked by the budget";
+  if (d.where.startsWith("tool_call")) return "Blocked before it ran";
   return "Request blocked";
 }
 

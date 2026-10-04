@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Gauge, Radio, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
 import { usePoll, type Health, type Verify } from "@/lib/api";
 import { useAuditEvents } from "@/lib/stream";
-import { CONTROLS, OUTCOME_LABEL, blockTitle, controlName, eventId, eventTitle, shortHash, utcDate, utcTime } from "@/lib/format";
+import { CONTROLS, OUTCOME_LABEL, controlName, eventId, shortHash, utcDate, utcTime } from "@/lib/format";
 import { NO_IDENTITY, OUTCOMES, RANGES, compact, computeOverview, ms, type Bucket, type Overview, type RangeKey } from "@/lib/stats";
 import { ControlBars, Legend, MARK, ACTION_MARK, Meter, OutcomeColumns, Sparkline } from "@/components/charts";
 import { PageHeader, Panel, PanelHeader, Pill, SectionLabel } from "@/components/kit";
@@ -257,17 +257,21 @@ function RecentBlocks({ o }: { o: Overview }) {
       <ul className="flex-1 divide-y">
         {o.recentBlocks.map((e) => {
           const d = e.decisions.find((x) => x.action === "block") ?? e.decisions.find((x) => x.control === "injection.jev" && x.action === "redact");
+          const s = e.summary;
           return (
             <li key={e.seq}>
               <Link href={`/audit?q=${eventId(e)}`} className="flex gap-3 px-6 py-3 hover:bg-selected/60">
                 <span className="mt-1.5 size-2 shrink-0 rounded-full bg-block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="truncate font-medium">{e.threats?.length ? `Attack defused · ${e.threats[0]}` : d ? controlName(d.control) : "Blocked"}</span>
+                    <span className="truncate font-medium" title={s?.reason}>
+                      {s?.headline ?? (d ? controlName(d.control) : "Blocked")}
+                    </span>
                     <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{utcTime(e.ts, false)}</span>
                   </div>
-                  <div className="truncate text-sm text-muted-foreground" title={d?.reason}>
-                    {e.user ?? NO_IDENTITY} · {d ? `${d.action === "block" ? blockTitle(d) : "Quarantined, the rest went through"} · ${d.reason}` : eventTitle(e).title}
+                  <div className="truncate text-sm text-muted-foreground">
+                    {s?.label ?? (e.threats?.length ? "Attack caught" : "Blocked")} · {e.user ?? NO_IDENTITY}
+                    {d ? ` · ${controlName(d.control)}` : ""}
                   </div>
                 </div>
               </Link>
@@ -277,7 +281,7 @@ function RecentBlocks({ o }: { o: Overview }) {
         {!o.recentBlocks.length && <li className="px-6 py-10 text-center text-muted-foreground">No attacks or blocks in this range.</li>}
       </ul>
       <Link href="/audit?outcome=attack" className="flex items-center gap-2 border-t px-6 py-3 text-sm text-muted-foreground hover:text-foreground">
-        All defused attacks in the audit trail <ArrowRight className="size-4" />
+        All caught attacks in the audit trail <ArrowRight className="size-4" />
       </Link>
     </Panel>
   );

@@ -23,7 +23,7 @@ from acl.adapters.llm_proxy import Upstream, call_upstream
 from acl.adapters.llm_proxy import router as llm_router
 from acl.detectors.demo import DemoJudge
 from acl.detectors.jev import JevJudge, Judge
-from acl.engine import Engine, with_threats
+from acl.engine import Engine
 from acl.feed import FeedPuller
 from acl.policy import (
     ACTIONS,
@@ -34,6 +34,7 @@ from acl.policy import (
     remove_model,
     set_control_action,
 )
+from acl.report import for_readers
 from acl.state import AuditLog
 from acl.stream import audit_stream
 
@@ -196,7 +197,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         Last-Event-ID header (sent by EventSource on reconnect, and preferred) replays the entries after that seq."""
         after = int(last_event_id) if last_event_id and last_event_id.strip().lstrip("-").isdigit() else since
         return StreamingResponse(
-            audit_stream(engine.audit, after, request.is_disconnected, policy, poll_policy, with_threats),
+            audit_stream(engine.audit, after, request.is_disconnected, policy, poll_policy, for_readers),
             media_type="text/event-stream",
             # no-transform + X-Accel-Buffering: ask proxies (Next.js rewrites, nginx) not to buffer or compress.
             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
@@ -223,7 +224,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     def events(limit: int = 100, outcome: str | None = None, type: str | None = None):
         ev = [e for e in engine.audit.events
               if (type is None or e.get("type", "exchange") == type) and (outcome is None or e.get("outcome") == outcome)]
-        return [with_threats(e) for e in ev[-limit:][::-1]]
+        return [for_readers(e) for e in ev[-limit:][::-1]]
 
     @app.get("/api/sessions")
     def sessions():
@@ -245,7 +246,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
         v = engine.session_view(sid)
         if v is None:
             raise HTTPException(404, f"no session {sid!r}")
-        return v
+        return {**v, "steps": [for_readers(e) for e in v["steps"]]}
 
     @app.post("/api/try")
     async def try_it(req: TryRequest, request: Request):

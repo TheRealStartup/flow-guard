@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUp, ChevronLeft, ChevronRight, Download, Radio, RefreshCw, RotateCcw, Search } from "lucide-react";
-import { usePoll, type AuditEvent, type Outcome, type Verify } from "@/lib/api";
+import { usePoll, type AuditEvent, type Verify } from "@/lib/api";
 import { useAuditEvents } from "@/lib/stream";
-import { eventTitle, utcDate, utcTime } from "@/lib/format";
-import { Btn, Field, OutcomePill, PageHeader, Panel, PanelHeader, Pill, Select, Stat, StatRow } from "@/components/kit";
+import { controlName, eventLines, utcDate, utcTime } from "@/lib/format";
+import { Btn, Field, PageHeader, Panel, PanelHeader, Select, Stat, StatRow, VerdictPill } from "@/components/kit";
 import { cn } from "@/lib/utils";
 import { EventDetail } from "./event-detail";
 
@@ -18,15 +18,25 @@ const RANGES = [
   { value: "all", label: "All time", seconds: Infinity },
 ];
 
+// The gateway's verdicts (one per event, the same label as the row badge). "attack" is linked from the Overview.
 const OUTCOMES = [
   { value: "", label: "All outcomes" },
-  { value: "attack", label: "Attack defused" },
+  { value: "attack", label: "Attack caught" },
   { value: "blocked", label: "Blocked" },
-  { value: "redacted", label: "Redacted" },
+  { value: "withheld", label: "Withheld" },
+  { value: "hidden", label: "Hidden" },
+  { value: "released", label: "Released" },
   { value: "flagged", label: "Flagged" },
   { value: "allowed", label: "Allowed" },
   { value: "policy_change", label: "Policy changes" },
 ];
+
+/** The verdict an outcome filter compares against; falls back to the raw outcome for entries without a summary. */
+function verdictOf(e: AuditEvent): string {
+  if (e.type === "policy_change") return "policy_change";
+  if (e.summary) return e.summary.verdict === "quarantined" ? "attack" : e.summary.verdict;
+  return e.threats?.length ? "attack" : e.outcome === "redacted" ? "hidden" : e.outcome;
+}
 
 const PAGE_SIZES = [12, 25, 50];
 
@@ -46,6 +56,7 @@ function actionsOf(e: AuditEvent): string[] {
   return names.length ? names : ["model"];
 }
 
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter(Boolean) as string[])].sort();
 
 export function AuditTrail() {
@@ -74,7 +85,9 @@ export function AuditTrail() {
   }, [all, range, updatedAt]);
 
   const exchanges = inRange.filter((e) => e.type === "exchange");
-  const count = (o: Outcome) => exchanges.filter((e) => e.outcome === o).length;
+  // One verdict per request, so the tiles never count the same request twice.
+  const verdicts = { attack: 0, blocked: 0, hidden: 0, withheld: 0, flagged: 0 } as Record<string, number>;
+  for (const e of exchanges) verdicts[verdictOf(e)] = (verdicts[verdictOf(e)] ?? 0) + 1;
   const agents = uniq(exchanges.map((e) => e.agent));
 
   const options = useMemo(() => {
@@ -90,9 +103,7 @@ export function AuditTrail() {
     const q = query.trim().toLowerCase();
     return inRange.filter((e) => {
       if (frozenAt !== null && e.seq > frozenAt) return false;
-      if (outcome === "attack") {
-        if (e.type !== "exchange" || !e.threats?.length) return false;
-      } else if (outcome === "policy_change" ? e.type !== "policy_change" : outcome && (e.type !== "exchange" || e.outcome !== outcome)) return false;
+      if (outcome && verdictOf(e) !== outcome) return false;
       if (action && !actionsOf(e).includes(action)) return false;
       if (agent && (e.type !== "exchange" || e.agent !== agent)) return false;
       if (user && (e.type !== "exchange" || e.user !== user)) return false;
@@ -102,8 +113,10 @@ export function AuditTrail() {
         String(e.seq),
         e.hash,
         ...actionsOf(e),
+        e.summary?.headline,
+        e.summary?.label,
         ...(e.type === "exchange"
-          ? [e.session, e.user, e.agent, e.purpose, e.role, ...e.decisions.map((d) => d.control)]
+          ? [e.session, e.user, e.agent, e.purpose, e.role, ...e.decisions.flatMap((d) => [d.control, controlName(d.control)])]
           : [e.version, ...e.changes.map((c) => c.what)]),
       ];
       return hay.some((h) => h?.toLowerCase().includes(q));
@@ -156,16 +169,16 @@ export function AuditTrail() {
           label="Agent requests"
           value={events ? exchanges.length : "—"}
           unit={range === "all" ? "all time" : rangeLabel}
-          note={events ? `Across ${agents.length} active agent${agents.length === 1 ? "" : "s"} · ${inRange.length - exchanges.length} policy events besides` : "Loading the audit log…"}
+          note={events ? `${plural(agents.length, "agent")} · ${verdicts.flagged} flagged for review · ${plural(inRange.length - exchanges.length, "policy event")} besides` : "Loading the audit log…"}
         />
+        <Stat label="Attacks caught" value={events ? verdicts.attack : "—"} tone="block" note="Injections quarantined or data stopped on its way out" />
+        <Stat label="Blocked" value={events ? verdicts.blocked : "—"} tone="block" note="Not attacks: outside scope or role, over budget, no valid key" />
         <Stat
-          label="Attacks defused"
-          value={events ? exchanges.filter((e) => e.threats?.length).length : "—"}
-          tone="block"
-          note={`Injections quarantined, exfiltrations stopped · ${count("blocked")} requests blocked in total`}
+          label="Data hidden"
+          value={events ? verdicts.hidden + verdicts.withheld : "—"}
+          tone="redact"
+          note="Requests where values were tokenized or content withheld"
         />
-        <Stat label="Redacted" value={events ? count("redacted") : "—"} tone="redact" note="Sensitive values hidden from the model" />
-        <Stat label="Flagged" value={events ? count("flagged") : "—"} tone="flag" note="Let through, recorded for review" />
       </StatRow>
 
       <Panel className="mb-6 px-6 pt-5 pb-4">
@@ -226,7 +239,7 @@ export function AuditTrail() {
               <input
                 value={query}
                 onChange={(e) => set(setQuery)(e.target.value)}
-                placeholder="Search event ID, session, tool or control…"
+                placeholder="Search event, session, tool, control or reason…"
                 className="h-10 w-full rounded-md border border-input pr-3 pl-9 text-[15px] outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
               />
             </div>
@@ -244,7 +257,7 @@ export function AuditTrail() {
             </thead>
             <tbody>
               {visible.map((e) => {
-                const { title, detail: sub } = eventTitle(e);
+                const { title, detail: sub } = eventLines(e);
                 const active = detail?.seq === e.seq;
                 return (
                   <tr
@@ -260,8 +273,10 @@ export function AuditTrail() {
                       <div className="font-mono text-sm whitespace-nowrap">{utcTime(e.ts, false)}</div>
                       <div className="text-sm whitespace-nowrap text-muted-foreground">{utcDate(e.ts)}</div>
                     </td>
-                    <td className="truncate py-3 pr-4">
-                      <div className="truncate font-medium">{title}</div>
+                    <td className="py-3 pr-4">
+                      <div className="line-clamp-2 font-medium break-words" title={e.summary?.reason}>
+                        {title}
+                      </div>
                       <div className="truncate text-sm text-muted-foreground">{sub}</div>
                     </td>
                     <td className="truncate py-3 pr-3 text-sm">
@@ -269,11 +284,7 @@ export function AuditTrail() {
                       <div className="truncate font-mono text-muted-foreground">{e.type === "exchange" ? (e.agent ?? "—") : ""}</div>
                     </td>
                     <td className="py-3">
-                      {e.type === "exchange" ? (
-                        e.threats?.length ? <Pill tone="block">Attack defused</Pill> : <OutcomePill outcome={e.outcome} />
-                      ) : (
-                        <Pill tone={e.error ? "block" : "neutral"}>{e.error ? "Rejected" : "Policy"}</Pill>
-                      )}
+                      <VerdictPill event={e} />
                     </td>
                     <td className="py-3 pr-4 text-muted-foreground">
                       <ChevronRight className={cn("size-4", active && "text-foreground")} />

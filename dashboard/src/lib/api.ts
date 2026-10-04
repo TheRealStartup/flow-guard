@@ -19,6 +19,19 @@ export type Decision = {
   source?: string | null; // the tool call a tool result answers, e.g. "read_file README.md"
 };
 
+// What one audit entry means, computed by the gateway (gateway/acl/report.py) so every page shows the same label and
+// the same counts for the same event. Verdict order: attack > blocked > quarantined > withheld > hidden > released > flagged > allowed.
+export type Verdict = "attack" | "blocked" | "quarantined" | "withheld" | "hidden" | "released" | "flagged" | "allowed" | "policy" | "rejected";
+export type Counts = { hidden: number; quarantined: number; withheld: number; released: number; blocked: number };
+export type Summary = {
+  verdict: Verdict;
+  label: string; // "Attack caught", "Blocked", "Hidden", …
+  headline: string; // what FlowGuard did, e.g. "Client scope: AC-7730 is not olivia's client"
+  reason: string; // one or two plain sentences
+  control: string | null; // the decisive control
+  counts?: Counts; // exchanges only
+};
+
 export type ToolCall = {
   name: string;
   arguments: string;
@@ -46,6 +59,7 @@ export type ExchangeEvent = {
   threats?: string[];
   decisions: Decision[];
   tool_calls?: ToolCall[];
+  summary?: Summary;
   spotlighted?: number;
   controls_ms: number;
   upstream_ms: number | null;
@@ -65,6 +79,7 @@ export type PolicyChangeEvent = {
   profile: string;
   changes: PolicyChange[];
   error?: string | null;
+  summary?: Summary;
   prev_hash: string;
   hash: string;
 };

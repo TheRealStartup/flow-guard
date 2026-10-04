@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { CircleCheck, CircleX, Code, EyeOff, FileText, Flag, ListTree, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import type { Action, AuditEvent, ExchangeEvent, PolicyChangeEvent, Verify } from "@/lib/api";
-import { controlName, eventId, eventTitle, headline, shortHash, utcDate, utcTime, whereLabel } from "@/lib/format";
-import { Btn, KV, OutcomePill, Panel, PanelHeader, Pill, SectionLabel, TEXT, actionTone, outcomeTone, type Tone } from "@/components/kit";
+import { controlName, eventId, eventLines, headline, shortHash, utcDate, utcTime, whereLabel } from "@/lib/format";
+import { Btn, KV, Panel, PanelHeader, Pill, SectionLabel, TEXT, VERDICT_TONE, VerdictPill, actionTone, outcomeTone, type Tone } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
 const BOX: Record<Tone, string> = {
@@ -29,10 +29,13 @@ export function EventDetail({ event, verify, onSession }: { event: AuditEvent | 
         <>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             <div className="font-mono text-sm text-muted-foreground">{eventId(event)}</div>
-            <h3 className="mt-1 text-2xl font-medium">{eventTitle(event).title}</h3>
-            <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-sm text-muted-foreground">
-              {event.type === "exchange" ? <OutcomePill outcome={event.outcome} /> : <Pill tone={event.error ? "block" : "neutral"}>{event.error ? "Rejected" : "Policy change"}</Pill>}
-              {utcDate(event.ts)} · {utcTime(event.ts)} UTC
+            <h3 className="mt-1 text-xl leading-snug font-medium break-words">{eventLines(event).title}</h3>
+            <div className="mt-1 text-[15px] text-muted-foreground">{eventLines(event).detail}</div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <VerdictPill event={event} />
+              <span className="font-mono text-sm text-muted-foreground">
+                {utcDate(event.ts)} · {utcTime(event.ts)} UTC
+              </span>
             </div>
             {event.type === "exchange" ? <Exchange e={event} onSession={onSession} /> : <PolicyEvent e={event} />}
             <Integrity event={event} verify={verify} />
@@ -57,12 +60,14 @@ export function EventDetail({ event, verify, onSession }: { event: AuditEvent | 
 function Exchange({ e, onSession }: { e: ExchangeEvent; onSession: (s: string) => void }) {
   const head = headline(e);
   const calls = e.tool_calls ?? [];
+  // The callout says where it happened ("Blocked before it left"); the gateway's reason says what and why, in plain words.
+  const tone: Tone = e.summary ? VERDICT_TONE[e.summary.verdict] : head ? (head.tone === "blocked" ? "block" : outcomeTone(head.tone)) : "neutral";
   return (
     <>
       {head && (
-        <div className={cn("mt-5 rounded-md px-4 py-3", BOX[head.tone === "blocked" ? "block" : outcomeTone(head.tone)])}>
+        <div className={cn("mt-5 rounded-md px-4 py-3", BOX[tone])}>
           <div className="font-semibold">{head.title}</div>
-          <div className="mt-1 text-[15px] break-words">{head.body}</div>
+          <div className="mt-1 text-[15px] break-words">{e.summary?.reason ?? head.body}</div>
         </div>
       )}
 
@@ -96,11 +101,12 @@ function Exchange({ e, onSession }: { e: ExchangeEvent; onSession: (s: string) =
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-sm font-medium">{c.name}</span>
                   <Pill className="ml-auto" tone={c.outcome === "blocked" ? "block" : c.outcome === "allowed" ? "allow" : "flag"}>
-                    {c.outcome === "blocked" ? "Stopped before it ran" : c.outcome === "allowed" ? "Allowed" : "Real values released"}
+                    {c.outcome === "blocked" ? "Blocked" : c.outcome === "allowed" ? "Allowed" : "Released"}
                   </Pill>
                 </div>
                 {c.arguments && <div className="mt-1.5 font-mono text-xs break-all text-muted-foreground">{c.arguments}</div>}
-                {c.control && <div className="mt-1 text-xs text-muted-foreground">Rule · {controlName(c.control)}</div>}
+                {c.control && <div className="mt-1 text-xs text-muted-foreground">Blocked before it ran · {controlName(c.control)}</div>}
+                {c.outcome === "allowed_with_real_values" && <div className="mt-1 text-xs text-muted-foreground">Real values released to this approved tool</div>}
               </div>
             ))}
           </div>
