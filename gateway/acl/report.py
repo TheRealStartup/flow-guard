@@ -202,7 +202,8 @@ def _hidden_sentence(ds: list[dict[str, Any]]) -> tuple[str, str]:
         kinds[k] = kinds.get(k, 0) + 1
     sources = sorted({d["source"].split()[0] for d in ds if d.get("source")})
     where = (f" in the {' and '.join(sources)} result" if sources
-             else " in the model's answer" if all(d.get("where") in ("model_output", "assistant") for d in ds) else "")
+             else " in the model's answer" if all(d.get("where") == "model_output" for d in ds)
+             else " in the model's earlier answer" if all(d.get("where") in ("model_output", "assistant") for d in ds) else "")
     what = _join([_plural(n, k) if n > 1 else k for k, n in kinds.items()])
     n = len(ds)
     return (f"{_plural(n, 'value')} hidden{where}",
@@ -211,13 +212,17 @@ def _hidden_sentence(ds: list[dict[str, Any]]) -> tuple[str, str]:
 
 def counts(decisions: list[dict[str, Any]]) -> dict[str, int]:
     """What one entry did, counted the same way on every page.
-    hidden: values replaced by tokens · quarantined: injected texts removed · withheld: restricted items kept back ·
+    hidden: values replaced by tokens (each token once) · quarantined: injected texts removed · withheld: restricted items kept back ·
     released: tool calls that got real values back · blocked: 1 if the request or a tool call was stopped."""
     out = {"hidden": 0, "quarantined": 0, "withheld": 0, "released": 0, "blocked": 0}
+    tokens: set[str] = set()  # the same value hidden twice (in a result and again in the history) counts once
     for d in decisions:
         c, a = d.get("control"), d.get("action")
         if a == "redact" and c in VALUE_CONTROLS:
-            out["hidden"] += 1
+            if not d.get("token") or d["token"] not in tokens:
+                out["hidden"] += 1
+            if d.get("token"):
+                tokens.add(d["token"])
         elif c == "injection.jev" and a == "redact":
             out["quarantined"] += 1
         elif a == "redact" and c in ("barrier.mnpi", "classification"):
@@ -280,7 +285,9 @@ def summarize(e: dict[str, Any]) -> dict[str, Any]:
     if d is not None:
         headline, reason = explain(d, user)
     elif verdict == "hidden":
-        hidden = [x for x in ds if x["action"] == "redact" and x["control"] in VALUE_CONTROLS]
+        seen: set[str] = set()
+        hidden = [x for x in ds if x["action"] == "redact" and x["control"] in VALUE_CONTROLS
+                  and not (x.get("token") and (x["token"] in seen or seen.add(x["token"])))]
         headline, reason = _hidden_sentence(hidden) if hidden else ("Content hidden", "Some content was replaced before the model saw it.")
     else:
         calls = [c["name"] for c in e.get("tool_calls") or []]

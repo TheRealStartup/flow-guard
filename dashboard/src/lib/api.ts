@@ -129,9 +129,16 @@ export type TryAcl = {
   session: string;
   user: string;
   agent: string;
+  threats?: string[];
+  summary?: Summary;
+  controls_ms?: number;
+  upstream_ms?: number | null;
 };
 
-export type TryResult = { session: string; user: string; scenario: string; model: string; steps: TryStep[] };
+// A poisoned source the run read, in the scenario's own hand-written words (never the injected text).
+export type TryAttack = { where: string; source: string; wants: string };
+
+export type TryResult = { session: string; user: string; scenario: string; model: string; steps: TryStep[]; attacks?: TryAttack[] };
 
 export async function getJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { cache: "no-store", ...init });

@@ -148,5 +148,5 @@ export function blockTitle(d: Decision) {
 
 export const whereLabel = (w: string) => {
   if (w.startsWith("tool_call:")) return `Proposed call · ${w.slice(10)}`;
-  return { request: "Request", prompt: "User prompt", tool_result: "Tool result", response: "Model answer", model_output: "Model answer" }[w] ?? w;
+  return { request: "Request", prompt: "User prompt", tool_result: "Tool result", response: "Model's answer", model_output: "Model's answer", assistant: "Model's earlier answer", session: "Session", model: "Model choice" }[w] ?? w;
 };

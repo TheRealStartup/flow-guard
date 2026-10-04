@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from ..engine import Engine
 from ..identity import Denied, resolve
+from ..report import summarize
 from .mock_model import compromised_model
 
 Upstream = Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -85,7 +86,8 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         entry = engine.record(ex, upstream_ms)
         resp["acl"] = {"seq": entry["seq"], "outcome": entry["outcome"], "decisions": entry["decisions"],
                        "policy_version": entry["policy_version"], "session": sid,
-                       "user": user, "agent": agent}
+                       "user": user, "agent": agent, "threats": entry["threats"], "summary": summarize(entry),
+                       "controls_ms": entry["controls_ms"], "upstream_ms": entry["upstream_ms"]}
         return JSONResponse(resp, headers={"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": sid})
 
     return r
