@@ -137,7 +137,15 @@ roles:
   support_junior:     {tools: [get_customer, send_email]}
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
   onboarding_analyst:                          # ~20 cases a day x ~60k tokens of client documents, with headroom
-    tools: [get_client_file, screen_sanctions, search_documents, query_datalake, send_email]
+    tools: [get_client_file, screen_sanctions, search_documents, query_datalake, send_email,
+            # the onboarding desk in Claude Code: the bank's systems over MCP (demo/bankdesk.py), plus reading and
+            # writing the memo in the case folder. No shell: an analyst's agent does not run commands.
+            mcp__hub__get_case, mcp__hub__list_document_requirements, mcp__hub__get_document,
+            mcp__hub__submit_for_approval, mcp__screening__screen_party, mcp__screening__resolve_result,
+            mcp__lei__search, mcp__mail__send_email, Read, Write, Edit, Glob, Grep, TodoWrite]
+    # One KYC case in Claude Code: ~10 documents, ~8 screenings, the memo; Claude Code resends its context on every
+    # request (~16k tokens at the start), measured ~75k tokens and 20 tool calls before the memo is written.
+    budget: {max_tokens: 400000, max_cost_usd: 0.50, max_tool_calls: 60, max_compute_seconds: 900}
     daily_budget: {max_tokens: 2000000, max_cost_usd: 6.00}
   mna_banker:                                  # chat plus ~10 long documents (filings, memos) a day
     tools: [search_documents, query_datalake, send_email]
@@ -159,11 +167,13 @@ barriers:
 # Limits on tool arguments: a tool may only be called for things inside the user's own scope.
 scopes:
   get_client_file: {argument: client_id, user_field: assigned_clients}
+  mcp__hub__get_case: {argument: case_id, user_field: assigned_clients}
+  mcp__hub__list_document_requirements: {argument: case_id, user_field: assigned_clients}
   get_employee:    {argument: employee_id, user_field: allowed_employees}
 
 sinks:
-  external: [send_email, http_post, WebFetch]      # data leaves the organisation here
-  detokenize: [charge_card, screen_sanctions]      # real values are put back only for these tools
+  external: [send_email, http_post, WebFetch, mcp__mail__send_email]   # data leaves the organisation here
+  detokenize: [charge_card, screen_sanctions, mcp__screening__screen_party]   # real values only for these tools
 
 # Shell commands that send data out (Claude Code has no http_post: it runs curl in Bash). A matching command to a
 # host outside allow_hosts counts as an external sink, so flow.sensitive_to_external decides on it.
@@ -188,6 +198,14 @@ classification:
     send_email: internal
     charge_card: internal
     get_client_file: P2              # client onboarding file (owners, documents, settlement account)
+    mcp__hub__get_case: P2           # the onboarding desk's systems (demo/bankdesk.py)
+    mcp__hub__get_document: P2
+    mcp__hub__list_document_requirements: internal
+    mcp__hub__submit_for_approval: internal
+    mcp__screening__screen_party: internal
+    mcp__screening__resolve_result: internal
+    mcp__lei__search: public
+    mcp__mail__send_email: internal
     screen_sanctions: internal
     search_documents: internal       # restricted deal documents in it are DP30 by their terms
     list_files: internal

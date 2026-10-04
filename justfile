@@ -56,6 +56,12 @@ agent user prompt model="deepseek/deepseek-v4.1-flash":
 claude-code model="mock/compromised" *args:
     cd gateway && ACL_CALLER_DIR="{{invocation_directory()}}" uv run python ../demo/claude_code.py --model "$1" -- "${@:2}"
 
+# The onboarding desk: Claude Code as olivia's KYC agent, the bank's systems over MCP (demo/bankdesk.py), behind the gateway.
+# Extra args go to claude: just onboarding-desk deepseek/deepseek-v4.1-flash -p "Prepare the KYC memo for case NW-2041."
+[positional-arguments]
+onboarding-desk model="deepseek/deepseek-v4.1-flash" *args:
+    cd gateway && uv run python ../demo/claude_onboarding.py --model "$1" -- "${@:2}"
+
 # new API key for a user's agent: prints the key (give it to the agent) and the line for policy/identities.yaml
 new-key user agent:
     @python3 -c "import secrets,hashlib; k='acl_'+'{{user}}'+'_'+secrets.token_hex(16); print('key (give to the agent, store nowhere else):', k); print('add to policy/identities.yaml:'); print('  - {user: {{user}}, agent: {{agent}}, key_sha256: '+hashlib.sha256(k.encode()).hexdigest()+'}')"
