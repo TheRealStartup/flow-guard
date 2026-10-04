@@ -79,3 +79,22 @@ Core demo: docs/pitch/demo-script.md (A onboarding via the dashboard's Live demo
 Decisions D4 (two core scenarios) and D5 (airtight = business-correct first) in docs/decisions.md. Tasks and priorities
 live on the board (github.com/orgs/TheRealStartup/projects/1); docs/backlog.md holds parked ideas only.
 Known open: onboarding documents not verified against a KYC checklist; client names reach the model.
+
+## Status (Sun 4 Oct ~07:00)
+- main is pushed (8782c1c): onboarding desk (`just onboarding-desk`, real Claude Code as olivia's KYC agent with MCP
+  bank systems), benchmarks (docs/benchmarks.md), detector fixes, Jev threshold 0.40 (balanced), KYC-correct
+  onboarding data (docs/kyc-onboarding.md), date-of-birth detector, daily budgets, signature feed from a URL
+  (`just feed`), approved-model list, directory.yaml. Checkpoints: tags checkpoint-sun-0400 / -0515 / -0630;
+  `demo-stable` still at 0400 (move it only after a full demo run).
+- Known issue: at threshold 0.40 Jev also quarantines bank-internal tool results that legitimately instruct the
+  agent (screening notes). Fix in progress: integrity axis per source (session "Add the integrity axis…", branch
+  feature/integrity). Until merged, the onboarding desk run shows false quarantines on screening results.
+- Claude Desktop Code tab cannot be routed per folder ("ANTHROPIC_BASE_URL is managed by Claude Desktop"); the only
+  documented way is Developer Mode → Configure Third-Party Inference (app-wide). Demo the desk in the terminal.
+- Parallel sessions/branches: UX rework (feature/ux-rework, docs/ux-review.md), leak detection
+  (feature/leak-fingerprints, experimental), adapters (Codex adapter pending Paul's decision), integrity.
+- Open: fresh demo run + move demo-stable; demo script Act 1 → onboarding desk; board cleanup; facts card for slides
+  (benchmarks, Desktop via central config, Claude Code in GitHub Actions); handover message for the morning team;
+  claim audit; dead-code tools (vulture/knip/jscpd, downloads need Paul's OK).
+- Run the services from a terminal with `just dev` (gateway :8000, dashboard :3000, feed :8100), not from a Claude
+  session: background processes die with the session.
