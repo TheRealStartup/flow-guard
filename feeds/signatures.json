@@ -1,6 +1,6 @@
 {
   "feed": "flowguard-security-team",
-  "updated": "2026-10-03",
+  "updated": "2026-10-04",
   "note": "Published by the security team. The gateway pulls this file from feed_url, checks every signature against its own examples, and only then enforces it.",
   "signatures": [
     {
@@ -11,7 +11,15 @@
         "prompt"
       ],
       "pattern": "(c__builtin__|cposix|cos)\\s*\\n\\s*system|__reduce__\\s*\\(",
-      "ref": "Malicious pickle payloads in model files (Hugging Face, 2024)"
+      "ref": "Malicious pickle payloads in model files (Hugging Face, 2024)",
+      "title": "Malicious pickle payloads in model files",
+      "severity": "critical",
+      "published": "2024-02-27",
+      "cve": null,
+      "sources": [
+        "https://jfrog.com/blog/data-scientists-targeted-by-malicious-hugging-face-ml-models-with-silent-backdoor/",
+        "https://www.reversinglabs.com/blog/rl-identifies-malware-ml-model-hosted-on-hugging-face"
+      ]
     },
     {
       "id": "SIG-TORCH-UNSAFE-LOAD",
@@ -19,7 +27,14 @@
         "tool_args"
       ],
       "pattern": "torch\\.load\\((?![^)]*weights_only\\s*=\\s*True)",
-      "ref": "CVE-2025-32434 class: torch.load without weights_only"
+      "ref": "CVE-2025-32434 class: torch.load without weights_only",
+      "title": "Model loading without weights_only (PyTorch remote code execution)",
+      "severity": "critical",
+      "published": "2025-04",
+      "cve": "CVE-2025-32434",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2025-32434"
+      ]
     },
     {
       "id": "SIG-YAML-UNSAFE",
@@ -27,7 +42,14 @@
         "tool_args"
       ],
       "pattern": "yaml\\.(unsafe_)?load\\((?![^)]*SafeLoader)",
-      "ref": "Unsafe YAML deserialization"
+      "ref": "Unsafe YAML deserialization",
+      "title": "Unsafe YAML deserialization (PyYAML full load)",
+      "severity": "high",
+      "published": "2020-03",
+      "cve": "CVE-2020-1747",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2020-1747"
+      ]
     },
     {
       "id": "SIG-CURL-PIPE-SHELL",
@@ -37,7 +59,15 @@
         "prompt"
       ],
       "pattern": "(curl|wget)\\s[^|;]*\\|\\s*(ba|z)?sh",
-      "ref": "Remote script execution"
+      "ref": "Remote script execution",
+      "title": "Script downloaded and run in one step (used by the ShadowRay 2.0 campaign)",
+      "severity": "high",
+      "published": "2025-11",
+      "cve": null,
+      "sources": [
+        "https://www.oligo.security/blog/shadowray-2-0-attackers-turn-ai-against-itself-in-global-campaign-that-hijacks-ai-into-self-propagating-botnet",
+        "https://attack.mitre.org/techniques/T1059/004/"
+      ]
     },
     {
       "id": "SIG-RM-RF-ROOT",
@@ -45,7 +75,15 @@
         "tool_args"
       ],
       "pattern": "rm\\s+-[a-z]*r[a-z]*f?\\s+(/|~|\\$HOME)(\\s|$)",
-      "ref": "Destructive deletion (Replit agent DB deletion, 2025)"
+      "ref": "Destructive deletion (Replit agent DB deletion, 2025)",
+      "title": "Destructive deletion by an agent (Replit production database, Amazon Q wiper)",
+      "severity": "critical",
+      "published": "2025-07-18",
+      "cve": null,
+      "sources": [
+        "https://www.theregister.com/2025/07/21/replit_saastr_vibe_coding_incident/",
+        "https://aws.amazon.com/security/security-bulletins/AWS-2025-015/"
+      ]
     },
     {
       "id": "SIG-SHADOWRAY",
@@ -53,7 +91,15 @@
         "tool_args"
       ],
       "pattern": "/api/jobs/?[\"']?\\s*,?.*entrypoint",
-      "ref": "ShadowRay, CVE-2023-48022: unauthenticated Ray job submission"
+      "ref": "ShadowRay, CVE-2023-48022: unauthenticated Ray job submission",
+      "title": "ShadowRay: unauthenticated Ray job submission",
+      "severity": "critical",
+      "published": "2023-11-28",
+      "cve": "CVE-2023-48022",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2023-48022",
+        "https://www.oligo.security/blog/shadowray-2-0-attackers-turn-ai-against-itself-in-global-campaign-that-hijacks-ai-into-self-propagating-botnet"
+      ]
     },
     {
       "id": "SIG-MCP-TOOL-POISONING",
@@ -62,7 +108,14 @@
         "tool_result"
       ],
       "pattern": "<IMPORTANT>|do not (tell|mention|inform) the user|ignore (all )?(previous|prior) instructions",
-      "ref": "MCP tool poisoning (Invariant Labs, 2025)"
+      "ref": "MCP tool poisoning (Invariant Labs, 2025)",
+      "title": "MCP tool poisoning: hidden instructions in a tool description",
+      "severity": "high",
+      "published": "2025-04-01",
+      "cve": null,
+      "sources": [
+        "https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks"
+      ]
     },
     {
       "id": "SIG-EXFIL-MARKDOWN-IMG",
@@ -71,7 +124,15 @@
         "prompt"
       ],
       "pattern": "!\\[[^\\]]*\\]\\(https?://[^)]*\\?[^)]*=",
-      "ref": "Data exfiltration via markdown image URLs"
+      "ref": "Data exfiltration via markdown image URLs",
+      "title": "Data exfiltration through image URLs (EchoLeak, ForcedLeak)",
+      "severity": "high",
+      "published": "2025-06",
+      "cve": "CVE-2025-32711",
+      "sources": [
+        "https://arxiv.org/html/2509.10540v1",
+        "https://www.theregister.com/software/2025/09/26/salesforce-agentforce-tricked-into-leaking-sales-leads/668952"
+      ]
     }
   ]
 }

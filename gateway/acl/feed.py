@@ -12,6 +12,7 @@ be signed; that is on the roadmap.
 
 import asyncio
 import hashlib
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,8 @@ class FeedPuller:
             self.status.update(error=error)
             return self.status
         version = hashlib.sha256(text.encode()).hexdigest()[:8]
-        self.status.update(error=None, version=version, count=len(sigs))
+        tested = sum(1 for s in json.loads(text).get("signatures", []) if (s.get("examples") or {}).get("match"))
+        self.status.update(error=None, version=version, count=len(sigs), tested=tested)
         if not dest.exists() or dest.read_text() != text:
             tmp = dest.with_suffix(".tmp")
             tmp.write_text(text)

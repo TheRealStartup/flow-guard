@@ -30,7 +30,7 @@ type Details = {
   scopes: Record<string, { argument: string; user_field: string }>;
   barriers: { public_message: string; restricted: { terms: number }[] };
   signatures: { id: string; where: string[]; ref: string; title?: string; severity?: string | null; published?: string | null; cve?: string | null; sources?: string[] }[];
-  feed?: { url: string | null; checked: number | null; updated: number | null; version: string | null; error: string | null; count?: number };
+  feed?: { url: string | null; checked: number | null; updated: number | null; version: string | null; error: string | null; count?: number; tested?: number };
 };
 
 /** The one-line "what does this control check, with which settings" column. */
@@ -446,7 +446,9 @@ function Signatures({ d, onChanged }: { d: Details; onChanged: () => void }) {
           ? "Local file only: no feed_url set in policy.yaml."
           : f.error
             ? `Feed ${f.url} rejected or unreachable (${f.error}). The last good signatures stay active.`
-            : `Pulled from ${f.url} · version ${f.version ?? "?"} · checked ${f.checked ? utcTime(f.checked) : "never"} · every signature passed its own examples before it was enforced.`}
+            : `Pulled from ${f.url} · version ${f.version ?? "?"} · checked ${f.checked ? utcTime(f.checked) : "never"} · checked before it was enforced: patterns compile${
+                f.tested ? `, ${f.tested} of ${f.count} signatures passed their own example attacks` : "; no signature carries example attacks yet"
+              }.`}
       </p>
       <table className="w-full text-left text-[15px]">
         <thead className="border-b bg-muted text-sm text-muted-foreground">
