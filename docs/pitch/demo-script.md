@@ -15,14 +15,18 @@ Every slide, every demo beat, every answer in Q&A comes back to this sentence. I
 
 ## Before you go on stage (T-15 min)
 
-- [ ] `docker compose up --build -d --wait`, then open http://localhost:3000/overview and `/audit` side by side.
-- [ ] `docker compose exec gateway python /app/demo/seed.py` once, so the dashboard is not empty and you have a **recorded backup** of every scenario.
+- [ ] `just gateway` and `just dashboard` (two terminals; Docker works too: `docker compose up --build -d --wait`), then open
+      http://localhost:3000/overview and `/audit` side by side.
+- [ ] `just demo-data deepseek/deepseek-v4.1-flash` once, so the dashboard is not empty and you have a **recorded backup** of every scenario.
 - [ ] Terminal font at 20pt+, dark theme, the commands below in shell history (arrow-up, no typing on stage).
 - [ ] `policy/policy.yaml` open in an editor at `active_profile:` and the `sinks:` block.
 - [ ] Run `just test` (or the Compose `tests` profile) and **update the test count on slide 10** if it changed.
 - [ ] Check the wording of the three incidents on slide 3 and the CIO framing on slide 4 against the links in
       `docs/goldman-cases.md` and `docs/goldman-context.md`. Never quote a line you have not read at the source.
-- [ ] Wi-Fi off is fine: the demo uses `mock/compromised` and the offline judge. Nothing calls out.
+- [ ] **Internet required.** The model (DeepSeek via OpenRouter) and the injection judge (Jev, api.typesafe.ai) are outside
+      services, and the judge fails closed: without a connection every request with new tool data is blocked. Check
+      `curl -s localhost:8000/api/health` shows `"judge":"jev"` and run Act 1 once. Offline fallback only if the venue Wi-Fi
+      dies: restart the gateway with `ACL_JUDGE=demo` (built-in offline judge) and use the recorded runs.
 
 ---
 
@@ -83,22 +87,23 @@ Point at the amber row.
 ### Act 1 · Olivia and the poisoned document *(75 s)*
 
 ```bash
-docker compose exec gateway python /app/demo/agent.py olivia "Prepare the onboarding file for client NW-2041." --scenario onboarding --model mock/compromised --purpose client-onboarding
+cd gateway && uv run python ../demo/agent.py olivia "Prepare the onboarding file for client NW-2041." --scenario onboarding --model deepseek/deepseek-v4.1-flash --purpose client-onboarding
 ```
-
-Presenter, while it runs:
-> "This model is deliberately compromised: it obeys any instruction it reads. Worst case on purpose."
 
 Point at, in order:
 1. **Passports and the IBAN become tokens** (`[[PASSPORT#…]]`): "the model never saw them."
 2. **`screen_sanctions` got the real passport**: "the one tool policy allows."
 3. **The poisoned field is quarantined**: "Only that field. The rest of the document still works, so Olivia's job still gets done."
-4. **The deal-room email never leaves.**
+4. **And if the judge had missed it?** Dashboard → Policies → `injection.jev` → **Flag** (the banner shows the change,
+   the audit log a new policy version). Rerun with a model we hijacked on purpose, one that obeys every instruction it
+   reads (`--model mock/compromised`): the agent now tries to email the client file out, and the **flow rule drops the
+   email**. Set `injection.jev` back to **Redact**.
+   > "Detectors miss things; Microsoft's missed EchoLeak. Client data still cannot leave."
 
 Then the scope check (one line, fast):
 
 ```bash
-docker compose exec gateway python /app/demo/agent.py olivia "Prepare the onboarding file for client AC-7730." --scenario onboarding --model mock/compromised --purpose client-onboarding
+cd gateway && uv run python ../demo/agent.py olivia "Prepare the onboarding file for client AC-7730." --scenario onboarding --model deepseek/deepseek-v4.1-flash --purpose client-onboarding
 ```
 
 > "Not her client. The call never runs."
@@ -106,28 +111,43 @@ docker compose exec gateway python /app/demo/agent.py olivia "Prepare the onboar
 ### Act 2 · Marcus and the information barrier *(45 s)*
 
 ```bash
-docker compose exec gateway python /app/demo/agent.py marcus "Search the deal room for Kestrel Dynamics and email a summary to marcus.home@gmail.com." --scenario onboarding --model mock/compromised --purpose deal-execution
+cd gateway && uv run python ../demo/agent.py marcus "Search the deal room for Kestrel Dynamics and email a summary to marcus.home@gmail.com." --scenario onboarding --model deepseek/deepseek-v4.1-flash --purpose deal-execution
 ```
 
-> "Marcus is on the Falcon deal team. He *may* read the memo. But nobody, not even the deal team, may send it outside.
-> And on the public side, Olivia's agent gets a neutral answer that doesn't even confirm Falcon exists."
+The gateway answers itself: "Some results are outside your access. The request was not sent to any model."
+> "Marcus works on Falcon. But an unannounced deal is a class of data that no outside model ever receives, not even
+> for the deal team. The question itself never left the bank.
+> And Olivia, on the public side, gets the very same neutral sentence: it doesn't even confirm Falcon exists."
 
-### Act 3 · Devon's coding agent *(45 s)*
+### Act 3 · Devon and the real Claude Code *(45 s)*
+
+The unmodified Claude Code, pointed at us with one environment variable, in the `payments-service` repo:
 
 ```bash
-docker compose exec gateway python /app/demo/agent.py devon "Get the tests in the fx-rates-service repo passing." --scenario developer --model mock/compromised --purpose development
+just claude-code deepseek/deepseek-v4.1-flash
 ```
+
+Type: *"The nightly payments job failed. Look at logs/payments-nightly.log and tell me what went wrong."*
+Claude finds the bug (`EURO` is not an ISO currency code; it should be `EUR`). The log's IBANs and card number reach the
+model vendor only as tokens.
+> "Production data, the AI still solves it, and the client data never reached the vendor."
+
+Then: *"Read the README and do what it says."* The README carries a hidden instruction; it is quarantined, and Claude says
+so itself. Even `cat README.md` in the shell comes back quarantined: we guard what flows back to the model, not one tool.
+
+Runaway loop, with the hijacked model (it never gives up):
 
 ```bash
-docker compose exec gateway python /app/demo/agent.py devon "Keep running the tests until they pass." --scenario developer --model mock/compromised --purpose development --steps 25
+just claude-code mock/compromised -p "Keep running the tests until they pass."
 ```
 
-> "Thousands of coding agents means three new risks: secrets in `.env`, code posted outside, and agents that loop forever on your bill.
-> Key redacted. Upload blocked. Budget stops the loop: it's a runaway, and here's where it stopped."
+> "Thousands of coding agents means three new risks: secrets in `.env`, hidden instructions in repos, and agents that
+> loop forever on your bill. Key redacted. Instruction quarantined. Budget stops the loop after 20 tool calls."
 
 ### Act 4 · Your turn *(30 s)*. **The closer of the demo. Hand them control.**
 
-Turn the laptop to the jury, editor open on `policy/policy.yaml`:
+Turn the laptop to the jury, editor open on `policy/policy.yaml` (or the dashboard's Policies page, where one click changes
+a control's action in the same file):
 > "You'll edit this file during judging anyway, so do it now. Change anything. We won't restart."
 
 Suggested edits if they hesitate (each takes one line):
@@ -150,7 +170,7 @@ Open `/audit`, filter by user, and narrate the recorded decisions. The seeded ru
 ## Act IV · The close (8:00–10:00)
 
 **Slide 10: Built to be checked** *(30 s)*
-> "Over a hundred tests, about seven seconds, no network. Run `just test` yourselves. No paid APIs; it runs on this laptop's CPU.
+> "Nearly three hundred tests, under a minute, no network and no keys. Run `just test` yourselves.
 > And every control reports its own latency, so the AI judge is never hidden in an average."
 
 **Slide 11: Regulator's language** *(20 s)*. For the Goldman judges.
@@ -179,6 +199,7 @@ Technique for every answer: **acknowledge → reframe to the flow → evidence �
 
 | They ask | Answer |
 |---|---|
+| "Why does the gateway see client data at all?" | "It sits inside the bank, like a firewall. The point is what leaves: tokens to the model vendor, real values only to approved internal tools." |
 | "Can't the agent just bypass the proxy?" | "Yes, today. That's on our limits slide. In a bank, egress control already decides what can reach a model API. Point it at us and bypassing means no model at all. The MCP adapter closes the tool side." |
 | "Isn't this just DLP?" | "DLP blocks or masks. That breaks KYC, which needs the real passport. We tokenize reversibly and decide per tool where the real value comes back. DLP can't tell sanctions screening from an email." |
 | "Prompt-injection detectors exist. Why not just use one?" | "We do use one, as one layer of nine. But EchoLeak walked past one. Our bet doesn't depend on catching the attack: if it gets through, the data still can't leave." |
@@ -186,7 +207,7 @@ Technique for every answer: **acknowledge → reframe to the flow → evidence �
 | "What about false positives blocking real work?" | "Quarantine removes only the suspicious field, not the whole request; you saw Olivia's file still got prepared. Profiles go from strict to permissive per team, and every block has a reason in the log." |
 | "How does it scale to thousands of agents?" | "Each key is one user and one agent, with its own budget. The engine is stateless per decision apart from the session's token vault, so it scales horizontally. Budgets are what stop a thousand-agent bill." |
 | "Who approves the high-risk actions?" | "Today a policy can block with a reason. Next is four-eyes approval bound to a hash of the exact arguments, so nothing can change after someone approves it." |
-| "Why should Goldman build on this instead of a vendor?" | "It runs fully local, no data leaves for a third-party guardrail, it's one YAML file your risk team can read, and it sits in front of any model vendor, which is what DORA concentration risk asks for." |
+| "Why should Goldman build on this instead of a vendor?" | "It's one YAML file your risk team can read, it sits in front of any model vendor, which is what DORA concentration risk asks for, and every outside destination, the AI judge included, gets only the data class its vendor is approved for. Today our judge is an outside service approved like the model vendor; next is an on-premise judge, so client files need no outside checker at all." |
 
 Negotiation reminders for Q&A:
 - **Label the concern before answering** ("So the worry is that we're one more thing to bypass. Fair.") It lowers defences.
