@@ -92,14 +92,15 @@ on. It stops a request when:
   `ranking` (case, spaces, `-` and `_` ignored, so `Performance Review` and `termination-letter` count);
 - any message of the conversation matches one of the rule's signatures (rank / rate / evaluate / performance review /
   fire / who to let go, near an employee reference such as `E-1001`, "my team", "these employees"; a Polish variant
-  too; and people named in the prompt: "Should we fire Maria?", "Can we let Maria go?", "Rank Alice and Bob by
-  performance", in any capitalisation), whatever the header claims. The whole history is searched on every request, so a request that once went
+  too; and people named in the prompt: "Should we fire Maria?", "Can we let Maria go?", "Fire Maria.", "Write a
+  performance review for Maria.", "Evaluate Maria's performance.", "Rank Alice and Bob by performance", in any
+  capitalisation), whatever the header claims. The whole history is searched on every request, so a request that once went
   through (rule off at the time) is stopped when it is replayed after a live reload. Tool results are searched only if
   their source class lets them reach the model; a record that is withheld anyway cannot carry a request to the model,
   and a note in it that mentions a review must not stop admin work.
 The denial names the rule and the signature id, never the request text (excerpt `[WITHHELD: request text not
 recorded]`), so the audit log, the API answer and Try it do not repeat it. Ordinary work is not affected: "rank these
-cities", "rank the employee benefit options", "should we fire the analytics event…", "sort the rates table", "what is
+cities", "rank the employee benefit options", "should we fire the analytics event…", "which event should we fire?", "sort the rates table", "what is
 the parental leave policy?" pass, and other roles are not checked at all. The handbook (`demo/hr.py`) is a synthetic
 sample company policy with fictional rules, not real leave or employment-law requirements. Try it shows a tool-result
 preview only when the tool's class and the default class are both known levels and the tool is not above the default;
@@ -119,9 +120,10 @@ as a policy change.
 
 **Known limits:** the signatures are deterministic regexes, not a semantic guarantee. They catch the plain ways of
 asking (and invisible or full-width characters, JSON escapes), not paraphrases ("who would you keep if budgets were
-cut?", "fire Maria." as a bare command, "Maria or Bob: who stays?"), other languages than English and Polish, or
-look-alike letters from other scripts. A named person is recognised only by the shape of the sentence, so a technical
-"should we fire telemetry now?" may be stopped for HR users. They may also stop a
+cut?", "how did Maria do this year?", "show Maria the door", "Maria or Bob: who stays?"), synonyms beyond the listed
+verbs, other languages than English and Polish, or look-alike letters from other scripts. A named person is recognised
+only by the shape of the sentence (any word that is not a determiner or a listed technical noun), so a technical
+"should we fire telemetry now?", "terminate staging." or "evaluate Postgres's performance" may be stopped for HR users. They may also stop a
 borderline policy question that names a specific employee next to "termination". No model, ours or Jev, is used to
 judge HR prompts or records: an external judge would itself be a model processing the records. The purpose header is
 what the caller states; the rule stops a declared forbidden purpose, it cannot prove a declared benign one.

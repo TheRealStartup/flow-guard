@@ -38,7 +38,12 @@ NAMED_JUDGING = [
     "RANK ALICE AND BOB BY PERFORMANCE!",
     "Rank Alice, Bob and Carol by productivity.",
     "Compare Alice vs Bob: who is better?",
+    "Fire Maria.",
+    "Write a performance review for Maria.",
+    "Evaluate Maria's performance.",
 ]
+# The plain single-person orders that used to reach the model (HR-EVAL-NAMED-DIRECT / -REVIEW).
+NAMED_DIRECT = NAMED_JUDGING[-3:]
 ALLOWED_HR = [
     "What is the parental leave policy?",
     "How many days of annual leave do employees get?",
@@ -50,6 +55,9 @@ ALLOWED_HR = [
     "Sort the FX rates table by date.",
     "Should we fire the analytics event when a leave request is approved?",
     "Should we fire webhooks twice when the HR portal times out?",
+    "Which event should we fire?",
+    "Fire the event when the leave request is approved.",
+    "When are performance reviews for employees scheduled?",
 ]
 
 
@@ -204,7 +212,32 @@ def test_named_judging_on_the_anthropic_path_is_stopped(gw, prompt):
     assert not gw.upstream.seen and not gw.judge.calls and prompt not in audit(gw)
 
 
-@pytest.mark.parametrize("prompt", ["Should we fire Maria?", "Rank Alice and Bob by performance"])
+@pytest.mark.parametrize("prompt", NAMED_DIRECT)
+def test_named_orders_under_hr_admin_never_reach_model_or_jev(gw, prompt):
+    msg, decisions, tools_run = run(gw, prompt)
+    assert decisions == [("access.purpose", "block")] and tools_run == []
+    assert not gw.upstream.seen and not gw.judge.calls
+    for t in (prompt, "Maria"):
+        assert t not in audit(gw) and t not in msg["content"]
+
+
+@pytest.mark.parametrize("prompt", NAMED_DIRECT)
+def test_named_orders_on_the_anthropic_path_never_reach_model_or_jev(gw, prompt):
+    r = post_anthropic(gw, [{"role": "user", "content": [{"type": "text", "text": prompt}]}])
+    assert [(d["control"], d["action"]) for d in r.json()["acl"]["decisions"]] == [("access.purpose", "block")]
+    assert not gw.upstream.seen and not gw.judge.calls
+    for t in (prompt, "Maria"):
+        assert t not in audit(gw) and t not in r.text
+
+
+def test_technical_fire_question_on_the_anthropic_path_goes_through(gw):
+    gw.upstream.next_reply = {"text": "ok"}
+    r = post_anthropic(gw, [{"role": "user", "content": "Which event should we fire?"}]).json()
+    assert r["acl"]["outcome"] != "blocked" and gw.upstream.seen
+    assert not any(d["control"] == "access.purpose" for d in r["acl"]["decisions"])
+
+
+@pytest.mark.parametrize("prompt", ["Should we fire Maria?", "Rank Alice and Bob by performance", "Fire Maria."])
 def test_named_rules_do_not_apply_outside_hr(gw, prompt):
     gw.upstream.next_reply = {"text": "ok"}
     r = gw.chat("alice", [{"role": "user", "content": prompt}])
