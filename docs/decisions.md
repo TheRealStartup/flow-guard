@@ -125,3 +125,10 @@ look-alike letters from other scripts. A named person is recognised only by the 
 borderline policy question that names a specific employee next to "termination". No model, ours or Jev, is used to
 judge HR prompts or records: an external judge would itself be a model processing the records. The purpose header is
 what the caller states; the rule stops a declared forbidden purpose, it cannot prove a declared benign one.
+
+**Purpose in reports:** an HR X-Purpose is free text and can itself name a person, a salary or a health matter. A role
+with `redact_purpose: true` (today `hr_admin`) keeps its raw purpose in memory only, for `access.purpose` on every
+request; the audit log, events, export and `/api/sessions/{sid}` show `[WITHHELD: purpose not recorded]`, allowed or
+blocked, whether `access.purpose` is on or off. A request refused before identity is established (no or wrong key, a key
+claiming another user, a session hijack) never records the caller's purpose. Other roles keep their purpose in the log.
+A non-boolean flag is rejected on reload (last good policy stays). Tests: tests/test_hr_reporting.py.

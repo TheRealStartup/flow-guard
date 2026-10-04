@@ -29,6 +29,7 @@ class Signature:
 
 
 PURPOSE_ACTIONS = ("allow", "flag", "block")  # redact makes no sense for a request that should not be made at all
+PURPOSE_WITHHELD = "[WITHHELD: purpose not recorded]"  # what reports show instead of a redact_purpose role's X-Purpose
 INVISIBLE_RE = re.compile("[­​-‏⁠-⁤﻿]")  # soft hyphen, zero-width characters
 
 
@@ -129,6 +130,12 @@ class Policy:
 
     def role_of(self, user: str) -> str:
         return self.raw.get("users", {}).get(user, {}).get("role", "default")
+
+    def reported_purpose(self, user: str | None, purpose: str | None) -> str | None:
+        """The purpose as audit, events, export and the session API show it (D8). Roles with `redact_purpose: true`
+        (HR) get a fixed placeholder: the raw X-Purpose stays in memory for the checks only."""
+        role = self.raw.get("roles", {}).get(self.role_of(user)) if user else None
+        return PURPOSE_WITHHELD if purpose and (role or {}).get("redact_purpose") else purpose
 
     def allowed_tools(self, user: str) -> list[str]:
         roles = self.raw.get("roles", {})
@@ -350,6 +357,9 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
         re.compile(pat)  # a broken pattern is rejected here, so the last good policy stays active
     _check_classes(raw, controls)
     purpose_rules = _purpose_rules(controls)
+    for name, r in (raw.get("roles") or {}).items():
+        if "redact_purpose" in (r or {}) and not isinstance(r["redact_purpose"], bool):
+            raise ValueError(f"roles.{name}.redact_purpose must be true or false")  # a typo must not log raw purposes
 
     sigs: list[Signature] = []
     if sig_text is not None:
