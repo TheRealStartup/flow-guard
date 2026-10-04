@@ -142,7 +142,7 @@ blocked, whether `access.purpose` is on or off. A request refused before identit
 claiming another user, a session hijack) never records the caller's purpose. Other roles keep their purpose in the log.
 A non-boolean flag is rejected on reload (last good policy stays). Tests: tests/test_hr_reporting.py.
 
-## D8 · The scripted model (`mock/compromised`) stays in the demo, labelled as hijacked · DECIDED for now (Paul, Sun ~04:00)
+## D9 · The scripted model (`mock/compromised`) stays in the demo, labelled as hijacked · DECIDED for now (Paul, Sun ~04:00)
 Real models often refuse obvious data theft on their own (DeepSeek: 3 of 3), which hides whether our controls work. The
 scripted model obeys every instruction it reads. It is used for two beats only, both introduced as "a model we hijacked on
 purpose": the backstop (injection check on Flag, the data-flow rule still stops the email) and the runaway loop (the

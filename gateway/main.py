@@ -113,7 +113,11 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             raise HTTPException(400, str(e))
         tmp = policy_path.with_suffix(".yaml.tmp")
         tmp.write_text(text)
-        tmp.replace(policy_path)
+        try:
+            tmp.replace(policy_path)  # atomic: a reader never sees half a file
+        except OSError:  # e.g. a Docker Desktop bind mount on Windows refuses to rename over an open file
+            policy_path.write_text(text)
+            tmp.unlink(missing_ok=True)
         p = policies.get()
         return {"version": p.version, "control": cid, "action": p.action(cid)}
 

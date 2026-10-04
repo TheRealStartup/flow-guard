@@ -60,8 +60,18 @@ function settingsOf(id: string, c: ControlConfig, d: Details): string {
       return `threshold ${c.threshold} · timeout ${c.timeout_s} s${onErr}`;
     case "spotlight":
       return `mode ${c.mode} · tool results wrapped in data markers`;
+    case "access.purpose": {
+      const rules = (Array.isArray(c.rules) ? c.rules : []) as { roles?: string[]; forbidden?: string[]; signatures?: unknown[] }[];
+      return rules.map((r) => `${(r.roles ?? []).join(", ")}: no ${(r.forbidden ?? []).join(", ").replaceAll("_", " ")} (${r.signatures?.length ?? 0} patterns)`).join(" · ") || "no rules";
+    }
+    case "access.datalake":
+      return "named queries only, refused before they run if the result could not be sent on";
     default:
-      return Object.entries(c).filter(([k]) => k !== "action").map(([k, v]) => `${k} ${v}`).join(" · ");
+      // Never print nested settings raw ("[object Object]"): summarise lists and objects by size.
+      return Object.entries(c)
+        .filter(([k]) => k !== "action")
+        .map(([k, v]) => `${k} ${Array.isArray(v) ? `${v.length} entries` : v && typeof v === "object" ? `${Object.keys(v).length} settings` : v}`)
+        .join(" · ");
   }
 }
 

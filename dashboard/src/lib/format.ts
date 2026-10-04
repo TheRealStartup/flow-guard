@@ -18,6 +18,9 @@ export const CONTROLS: Record<string, { name: string; kind: string; scope: strin
   "injection.jev": { name: "Prompt-injection check", kind: "Injection", scope: "Quarantine text that tries to instruct the agent" },
   spotlight: { name: "Spotlighting", kind: "Injection", scope: "Tool results reach the model marked as data" },
   identity: { name: "Identity", kind: "Identity", scope: "API key → user and agent, purpose required" },
+  "access.purpose": { name: "Purpose rules (HR)", kind: "Access", scope: "No model judges employees; personnel files reach no model" },
+  "access.datalake": { name: "Data lake queries", kind: "Access", scope: "Only named queries the role may run, refused before they run" },
+  classification: { name: "Data classes", kind: "Barrier", scope: "Content above a destination's class limit is withheld" },
 };
 
 export const controlName = (id: string) => CONTROLS[id]?.name ?? id;

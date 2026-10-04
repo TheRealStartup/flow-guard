@@ -465,7 +465,12 @@ class PolicyStore:
 
     def get(self) -> Policy:
         side = self._side_files(self._policy.raw) if self._policy else (None, None)
-        stamp = (self.path.stat().st_mtime, *map(self._mtime, side))
+        try:
+            stamp = (self.path.stat().st_mtime, *map(self._mtime, side))
+        except OSError:  # an editor saving by delete + rename: the file is gone for a moment
+            if self._policy is None:
+                raise
+            return self._policy
         if self._policy is None or stamp != self._stamp:
             try:
                 text = self.path.read_text()

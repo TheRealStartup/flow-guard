@@ -473,3 +473,29 @@ def test_heuristic_secret_is_redacted_without_marking_the_session(gw):
     seen = json.dumps(gw.upstream.seen[-1])
     assert "hunter2xyz" not in seen and "max_tokens: 4096" in seen
     assert "SECRET" not in gw.app.state.engine.session("s1", "alice").labels
+
+
+def test_policy_file_missing_for_a_moment_keeps_the_last_good_policy(gw):
+    """Editors often save by delete + rename; a health check in that moment must not fail (seen as a 500 in Docker)."""
+    assert gw.client.get("/api/health").json()["ok"]
+    text = gw.policy_path.read_text()
+    gw.policy_path.unlink()
+    try:
+        r = gw.client.get("/api/health")
+        assert r.status_code == 200 and r.json()["ok"]
+    finally:
+        gw.policy_path.write_text(text)
+
+
+def test_dashboard_policy_edit_works_when_the_file_cannot_be_swapped(gw, monkeypatch):
+    """Docker Desktop on Windows can refuse to rename over a bind-mounted file; the edit is then written in place."""
+    from pathlib import Path
+
+    def refuse(self, target):
+        raise PermissionError("rename over a bind-mounted file refused")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    r = gw.client.post("/api/policy/controls/pii.iban", json={"action": "flag"})
+    assert r.status_code == 200 and r.json()["action"] == "flag"
+    assert "pii.iban:           {action: flag}" in gw.policy_path.read_text()
+    assert not gw.policy_path.with_suffix(".yaml.tmp").exists()
