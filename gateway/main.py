@@ -6,6 +6,7 @@ Interactive API docs for the dashboard: http://localhost:8000/docs
 """
 
 import asyncio
+import contextlib
 import os
 import time
 from pathlib import Path
@@ -23,7 +24,16 @@ from acl.adapters.llm_proxy import router as llm_router
 from acl.detectors.demo import DemoJudge
 from acl.detectors.jev import JevJudge, Judge
 from acl.engine import Engine, with_threats
-from acl.policy import ACTIONS, SUPPORTED_ACTIONS, UPSTREAMS, PolicyStore, add_model, parse, remove_model, set_control_action
+from acl.feed import FeedPuller
+from acl.policy import (
+    ACTIONS,
+    SUPPORTED_ACTIONS,
+    UPSTREAMS,
+    PolicyStore,
+    add_model,
+    remove_model,
+    set_control_action,
+)
 from acl.state import AuditLog
 from acl.stream import audit_stream
 
@@ -59,7 +69,18 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     policies.get()  # fail at startup, not on the first request, if the policy is broken
     engine = Engine(policies, audit, judge)
 
-    app = FastAPI(title="FlowGuard")
+    feed = FeedPuller(policies)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        task = asyncio.create_task(feed.run())  # pull the signature feed now and every refresh_s seconds
+        try:
+            yield
+        finally:
+            task.cancel()
+
+    app = FastAPI(title="FlowGuard", lifespan=lifespan)
+    app.state.feed = feed
     app.state.engine = engine
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.include_router(llm_router(engine, upstream))
@@ -101,7 +122,9 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             "scopes": raw.get("scopes", {}),
             "barriers": {"public_message": p.barrier_message,
                          "restricted": [{"terms": len(r.get("terms", []))} for r in barriers.get("restricted", [])]},
-            "signatures": [{"id": s.id, "where": s.where, "ref": s.ref} for s in p.signatures],
+            "signatures": [{"id": s.id, "where": s.where, "ref": s.ref, "title": s.title, "severity": s.severity,
+                            "published": s.published, "cve": s.cve, "sources": s.sources} for s in p.signatures],
+            "feed": feed.status,
         }
 
     @app.post("/api/policy/controls/{cid}")
@@ -134,6 +157,13 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
             policy_path.write_text(text)
             tmp.unlink(missing_ok=True)
         return policies.get()
+
+    @app.post("/api/feed/refresh")
+    async def refresh_feed(request: Request):
+        """Pull the signature feed now instead of waiting for the next refresh (dashboard button, local only)."""
+        if (request.client.host if request.client else "") not in LOCAL:
+            raise HTTPException(403, "Feed refresh is only accepted from localhost")
+        return await feed.pull()
 
     @app.post("/api/policy/models")
     def approve_model(body: ModelRequest, request: Request):

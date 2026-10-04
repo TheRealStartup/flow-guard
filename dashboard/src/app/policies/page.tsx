@@ -29,7 +29,8 @@ type Details = {
   sinks: { external?: string[]; detokenize?: string[] };
   scopes: Record<string, { argument: string; user_field: string }>;
   barriers: { public_message: string; restricted: { terms: number }[] };
-  signatures: { id: string; where: string[]; ref: string }[];
+  signatures: { id: string; where: string[]; ref: string; title?: string; severity?: string | null; published?: string | null; cve?: string | null; sources?: string[] }[];
+  feed?: { url: string | null; checked: number | null; updated: number | null; version: string | null; error: string | null; count?: number };
 };
 
 /** The one-line "what does this control check, with which settings" column. */
@@ -248,6 +249,7 @@ export default function PoliciesPage() {
           <Budgets d={d} />
         </div>
       )}
+      {d && <Signatures d={d} onChanged={reload} />}
     </>
   );
 }
@@ -406,6 +408,80 @@ function Budgets({ d }: { d: Details }) {
       <p className="border-t px-6 py-3 text-sm text-muted-foreground">
         Defined per role, counted per person. Whichever limit is hit first stops the agent (action: {d.controls.budget?.action}).
       </p>
+    </Panel>
+  );
+}
+
+const SEVERITY_TONE: Record<string, string> = {
+  critical: "bg-block-soft text-block",
+  high: "bg-flag-soft text-flag",
+  medium: "bg-redact-soft text-redact",
+  low: "bg-muted text-muted-foreground",
+};
+const RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function Signatures({ d, onChanged }: { d: Details; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const f = d.feed;
+  const sigs = [...d.signatures].sort((a, b) => (RANK[a.severity ?? "low"] ?? 4) - (RANK[b.severity ?? "low"] ?? 4) || (b.published ?? "").localeCompare(a.published ?? ""));
+  async function pull() {
+    setBusy(true);
+    try {
+      await fetch("/api/feed/refresh", { method: "POST" });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Panel className="mt-6">
+      <PanelHeader title="Known-attack signatures" count={sigs.length}>
+        <button onClick={pull} disabled={busy || !f?.url} className="rounded-md border bg-card px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50">
+          <RefreshCw className={cn("mr-1.5 inline size-4", busy && "animate-spin")} />
+          Pull feed now
+        </button>
+      </PanelHeader>
+      <p className={cn("border-b px-6 py-3 text-sm", f?.error ? "text-block" : "text-muted-foreground")}>
+        {!f?.url
+          ? "Local file only: no feed_url set in policy.yaml."
+          : f.error
+            ? `Feed ${f.url} rejected or unreachable (${f.error}). The last good signatures stay active.`
+            : `Pulled from ${f.url} · version ${f.version ?? "?"} · checked ${f.checked ? utcTime(f.checked) : "never"} · every signature passed its own examples before it was enforced.`}
+      </p>
+      <table className="w-full text-left text-[15px]">
+        <thead className="border-b bg-muted text-sm text-muted-foreground">
+          <tr>
+            <th className="py-2.5 pl-6 font-normal">Severity</th>
+            <th className="py-2.5 font-normal">Attack</th>
+            <th className="py-2.5 font-normal">Checked in</th>
+            <th className="py-2.5 font-normal">Known since</th>
+            <th className="py-2.5 pr-6 font-normal">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sigs.map((s) => (
+            <tr key={s.id} className="border-b align-top last:border-b-0">
+              <td className="py-3 pl-6">
+                {s.severity && <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium capitalize", SEVERITY_TONE[s.severity])}>{s.severity}</span>}
+              </td>
+              <td className="py-3 pr-3">
+                <div>{s.title || s.ref}</div>
+                <div className="font-mono text-xs text-muted-foreground">{s.id}</div>
+              </td>
+              <td className="py-3 pr-3 text-sm text-muted-foreground">{s.where.join(", ").replaceAll("_", " ")}</td>
+              <td className="py-3 pr-3 font-mono text-sm">{s.published ?? "—"}</td>
+              <td className="py-3 pr-6 text-sm">
+                {s.cve && <div className="font-mono">{s.cve}</div>}
+                {(s.sources ?? []).slice(0, 2).map((u) => (
+                  <a key={u} href={u} target="_blank" rel="noreferrer" className="block max-w-64 truncate text-muted-foreground underline hover:text-foreground">
+                    {u.replace(/^https?:\/\//, "")}
+                  </a>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Panel>
   );
 }

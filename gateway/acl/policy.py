@@ -37,6 +37,51 @@ class Signature:
     pattern: re.Pattern[str]
     where: list[str]
     ref: str = ""
+    title: str = ""
+    severity: str | None = None  # critical | high | medium | low
+    published: str | None = None  # date of the incident or advisory, YYYY-MM-DD
+    cve: str | None = None
+    sources: list[str] = field(default_factory=list)
+
+
+SIG_WHERE = ("prompt", "tool_result", "tool_args", "tool_description")
+SEVERITIES = ("critical", "high", "medium", "low")
+
+
+def parse_signatures(text: str) -> list[Signature]:
+    """Read a signature feed and refuse it unless every entry is sound: valid JSON, an id, a known `where`, a pattern
+    that compiles, and, when the entry brings examples, a pattern that matches each `match` example and none of the
+    `no_match` ones. A feed is outside input (whoever writes it steers the gateway), so it is checked before it is
+    trusted; a rejected feed leaves the last good one active."""
+    try:
+        doc = json.loads(text)
+    except ValueError as e:
+        raise ValueError(f"signature feed is not valid JSON: {e}") from e
+    out, seen = [], set()
+    for j, s in enumerate(doc.get("signatures") or [] if isinstance(doc, dict) else []):
+        sid = s.get("id") if isinstance(s, dict) else None
+        if not isinstance(sid, str) or not isinstance(s.get("pattern"), str) or sid in seen:
+            raise ValueError(f"signature #{j}: needs a unique id and a pattern")
+        seen.add(sid)
+        where = s.get("where") or []
+        if not where or any(w not in SIG_WHERE for w in where):
+            raise ValueError(f"signature {sid}: where must be a non-empty subset of {SIG_WHERE}")
+        if s.get("severity") is not None and s["severity"] not in SEVERITIES:
+            raise ValueError(f"signature {sid}: severity must be one of {SEVERITIES}")
+        try:
+            pat = re.compile(s["pattern"], re.IGNORECASE)
+        except re.error as e:
+            raise ValueError(f"signature {sid}: pattern does not compile: {e}") from e
+        ex = s.get("examples") or {}
+        for m in ex.get("match", []):
+            if not pat.search(m):
+                raise ValueError(f"signature {sid}: pattern misses its own example #{ex['match'].index(m)}")
+        for m in ex.get("no_match", []):
+            if pat.search(m):
+                raise ValueError(f"signature {sid}: pattern hits its own harmless example #{ex['no_match'].index(m)}")
+        out.append(Signature(sid, pat, list(where), s.get("ref", ""), s.get("title", ""), s.get("severity"),
+                             s.get("published"), s.get("cve"), list(s.get("sources") or [])))
+    return out
 
 
 PURPOSE_ACTIONS = ("allow", "flag", "block")  # redact makes no sense for a request that should not be made at all
@@ -377,7 +422,7 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
             raise ValueError(f"control {cid}: action must be one of {allowed}")
     for name, m in (raw.get("models") or {}).items():
         if not isinstance(m, dict):
-            raise ValueError(f"model {name}: settings must be a mapping like {{upstream: openrouter}}")
+            raise ValueError(f"model {name}: settings must be a mapping like {{upstream: openrouter}}")  # noqa: TRY004 - ValueError = a broken edit
     if controls.get("spotlight", {}).get("mode", "delimit") not in SPOTLIGHT_MODES:
         raise ValueError(f"control spotlight: mode must be one of {SPOTLIGHT_MODES}")
 
@@ -389,10 +434,7 @@ def parse(text: str, base_dir: Path, sig_text: str | None = None, keys_text: str
         if "redact_purpose" in (r or {}) and not isinstance(r["redact_purpose"], bool):
             raise ValueError(f"roles.{name}.redact_purpose must be true or false")  # a typo must not log raw purposes
 
-    sigs: list[Signature] = []
-    if sig_text is not None:
-        for s in json.loads(sig_text).get("signatures", []):
-            sigs.append(Signature(s["id"], re.compile(s["pattern"], re.IGNORECASE), s["where"], s.get("ref", "")))
+    sigs = parse_signatures(sig_text) if sig_text is not None else []
 
     idents: dict[str, dict[str, str]] = {}
     for i in (yaml.safe_load(keys_text) or {}).get("identities", []) if keys_text else []:
@@ -518,6 +560,11 @@ class PolicyStore:
         self.last_error: str | None = None
         self.history: list[dict[str, Any]] = []  # newest last, at most 20: what changed, when, or why a reload failed
         self.on_change = on_change
+
+    def note(self, entry: dict[str, Any]) -> None:
+        """Record an event about the policy's inputs (e.g. a rejected signature feed) like a reload, in history and audit."""
+        self._record({"version": self._policy.version if self._policy else None, "previous": None,
+                      "profile": self._policy.profile if self._policy else None, "changes": [], **entry})
 
     def _record(self, entry: dict[str, Any]) -> None:
         self.history = [*self.history, {"ts": time.time(), **entry}][-20:]

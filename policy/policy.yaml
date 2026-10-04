@@ -26,7 +26,11 @@ controls:
   access.scope:       {action: block}     # tool arguments limited to the user's own scope (e.g. assigned clients)
   access.datalake:    {action: block}     # data lake: named queries only, refused before they run (see datalake)
   secrets:            {action: redact}    # API keys, private keys
-  signatures:         {action: block, feed: signatures.json}
+  signatures:                    # known attacks, published by the security team and pulled from feed_url
+    action: block
+    feed: signatures.json        # the last good copy of the feed (what the gateway enforces)
+    feed_url: http://127.0.0.1:8100/signatures.json   # demo feed server (`just feed`); any HTTPS feed in this format
+    refresh_s: 300               # pull every 5 minutes; a feed that fails its own checks is rejected, the last good stays
   access.tools:       {action: block}     # role → allowed tools
   flow.sensitive_to_external:
     action: block

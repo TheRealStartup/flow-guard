@@ -1,12 +1,17 @@
 # AI Control Layer: `just --list` shows everything. Run inside the devshell (direnv or `nix develop`).
 
-# gateway (:8000) and dashboard (:3000) together; Ctrl-C stops both
+# gateway (:8000), dashboard (:3000) and the signature feed server (:8100) together; Ctrl-C stops all
 dev:
     #!/usr/bin/env bash
     trap 'kill 0' EXIT
     just gateway &
     just dashboard &
+    just feed &
     wait
+
+# the security team's signature feed server (:8100): publishes feeds/signatures.json; the gateway pulls it
+feed:
+    python3 -m http.server 8100 --bind 127.0.0.1 --directory feeds
 
 # policy engine + adapters (FastAPI, auto-reload) on :8000
 gateway:
