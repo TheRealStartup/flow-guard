@@ -13,7 +13,7 @@ export const RANGES = [
 export type RangeKey = (typeof RANGES)[number]["value"];
 
 /** Controls whose redactions hide a value behind a token (as opposed to quarantining a message). */
-const VALUE_CONTROLS = new Set(["pii.card", "pii.iban", "pii.pesel", "pii.passport", "secrets"]);
+const VALUE_CONTROLS = new Set(["pii.card", "pii.iban", "pii.pesel", "pii.passport", "pii.dob", "secrets"]);
 const JUDGE = "injection.jev";
 export const NO_IDENTITY = "unknown"; // requests denied before an API key resolved to a user
 

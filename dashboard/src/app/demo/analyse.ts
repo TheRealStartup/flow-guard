@@ -18,7 +18,7 @@ function tokenIn(excerpt: string | null, kind: string | undefined) {
 function finding(d: Decision): Finding {
   const base = { where: whereLabel(d.where), source: d.source ?? null, rule: d.control, reason: d.reason };
   const found = d.reason.match(/^([A-Z]+) detected/)?.[1];
-  const label = found ? { CARD: "Card number", IBAN: "IBAN", PESEL: "National ID (PESEL)", PASSPORT: "Passport number", SECRET: "Secret" }[found] ?? found : controlName(d.control);
+  const label = found ? { CARD: "Card number", IBAN: "IBAN", PESEL: "National ID (PESEL)", PASSPORT: "Passport number", DOB: "Date of birth", SECRET: "Secret" }[found] ?? found : controlName(d.control);
 
   if (d.control === "injection.jev" && d.action === "redact")
     return { ...base, found: "Text with hidden instructions", decision: `Quarantined${d.score != null ? ` (p = ${d.score.toFixed(2)})` : ""}`, tone: "block", sawInstead: "Content removed: suspected prompt injection" };

@@ -22,6 +22,7 @@ controls:
   pii.iban:           {action: redact}
   pii.pesel:          {action: redact}    # Polish national ID, with checksum
   pii.passport:       {action: redact}    # passport numbers, where the text labels them
+  pii.dob:            {action: redact}    # dates of birth, where the text labels them
   barrier.mnpi:       {action: redact}    # information barrier: redact = withhold restricted results from the wrong side
   access.scope:       {action: block}     # tool arguments limited to the user's own scope (e.g. assigned clients)
   access.datalake:    {action: block}     # data lake: named queries only, refused before they run (see datalake)

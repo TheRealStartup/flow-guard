@@ -61,6 +61,7 @@ def test_sanctions_screening_gets_the_real_passport(gw, outbox):
     _, decisions, tools_run = run(gw, "olivia", PREPARE)
     _, args, result = next(t for t in tools_run if t[0] == "screen_sanctions")
     assert args["passport"] == "C01X00T47" and json.loads(result)["sanctions_match"] is False
+    assert args["date_of_birth"] == "1979-03-14" and args["nationality"] == "GB"  # matched on name + DOB + nationality
     assert ("pii.detokenize", "flag") in decisions
 
 
@@ -136,3 +137,18 @@ def test_developer_stub_secret_in_repo_never_reaches_the_model(gw):
     r = gw.chat("devon", msgs, tools=developer.TOOLS).json()
     assert ("secrets", "redact") in [(d["control"], d["action"]) for d in r["acl"]["decisions"]]
     assert "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789" not in json.dumps(gw.upstream.seen)
+
+
+def test_dates_of_birth_reach_screening_but_never_the_model(gw, outbox):
+    p2_to_jev(gw)
+    run(gw, "olivia", PREPARE)
+    seen = model_saw(gw)
+    assert "1979-03-14" not in seen and "1983-11-02" not in seen and "[[DOB#" in seen
+
+
+def test_the_file_names_a_control_person_not_fund_investors(gw, outbox):
+    """Business-correct KYC for a Cayman fund: principals behind the GP and manager, investors vouched for by the administrator."""
+    doc = json.loads(onboarding.run_tool("get_client_file", {"client_id": "NW-2041"}))
+    assert "control_person" in doc and "general_partner" in doc and "beneficial_owners" not in doc
+    assert all("of the investment manager" in p["ownership"] for p in doc["principals"])
+    assert "UK Sanctions List" in onboarding.TOOLS[1]["function"]["description"]

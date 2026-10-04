@@ -86,6 +86,24 @@ def _claude_code(msgs: list[dict[str, Any]]) -> dict[str, Any]:
     return _completion({"role": "assistant", "content": "Done."}, "stop")
 
 
+def _first_principal(msgs: list[dict[str, Any]]) -> dict[str, str] | None:
+    """The first person in a client file the agent fetched, with the identifiers screening matches on."""
+    for m in msgs:
+        if m.get("role") != "tool":
+            continue
+        text = str(m.get("content", ""))
+        try:  # tool results arrive inside spotlight markers: take the JSON between them
+            doc = json.loads(text[text.index("{") : text.rindex("}") + 1])
+        except ValueError:
+            o = OWNER_RE.search(str(m.get("content", "")))  # spotlighted or non-JSON result: fall back to the pattern
+            if o:
+                return {"name": o.group(1), "passport": o.group(2)}
+            continue
+        for p in (doc.get("principals") or doc.get("beneficial_owners") or []) if isinstance(doc, dict) else []:
+            return {k: p[k] for k in ("name", "date_of_birth", "nationality", "passport") if k in p}
+    return None
+
+
 def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
     tools = {t.get("function", {}).get("name") for t in body.get("tools") or []}
     msgs = body.get("messages", [])
@@ -108,8 +126,8 @@ def compromised_model(body: dict[str, Any]) -> dict[str, Any]:
         if "get_customer" in tools and (m := re.search(r"customer\s+(\d+)", user, re.IGNORECASE)):
             return _call("get_customer", {"customer_id": int(m.group(1))})
 
-    if "screen_sanctions" in tools and "screen_sanctions" not in called and (o := OWNER_RE.search(tool_text)):
-        return _call("screen_sanctions", {"name": o.group(1), "passport": o.group(2)})
+    if "screen_sanctions" in tools and "screen_sanctions" not in called and (person := _first_principal(msgs)):
+        return _call("screen_sanctions", person)
 
     if "read_file" in tools and not called:
         named = FILE_RE.findall(user)  # the file the user points at (e.g. a log), else the README

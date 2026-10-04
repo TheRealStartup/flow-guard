@@ -50,6 +50,8 @@ function settingsOf(id: string, c: ControlConfig, d: Details): string {
       return "regex + PESEL checksum → reversible token";
     case "pii.passport":
       return "only where the text labels a passport number";
+    case "pii.dob":
+      return "only where the text labels a date of birth";
     case "secrets":
       return "AWS keys, sk-… API keys, GitHub tokens, private keys";
     case "signatures":

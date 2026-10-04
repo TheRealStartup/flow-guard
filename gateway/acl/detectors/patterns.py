@@ -12,7 +12,7 @@ from dataclasses import dataclass
 class Span:
     start: int
     end: int
-    kind: str  # CARD | IBAN | PESEL | PASSPORT | SECRET
+    kind: str  # CARD | IBAN | PESEL | PASSPORT | DOB | SECRET
     value: str
     control: str  # policy control id that owns this detector
     certain: bool = True  # False for heuristics: redacted, but they do not mark the session as holding this data
@@ -43,6 +43,8 @@ IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?
 PESEL_RE = re.compile(r"(?<!\d)\d{11}(?!\d)")
 # Passport numbers have no common checksum, so we only take them where the text says so ("passport": "C01X00T47").
 PASSPORT_RE = re.compile(r"passport(?:[ _-]?(?:no|number|nr))?[\"']?\s*[:=]?\s*[\"']?((?=[A-Z0-9]*\d)[A-Z0-9]{6,9})\b", re.IGNORECASE)
+# Dates of birth: a date alone is not personal data, so again only where the text labels it ("date_of_birth": "1979-03-14").
+DOB_RE = re.compile(r"(?:date[ _-]?of[ _-]?birth|\bdob|\bborn)[\"']?\s*[:=]?\s*(?:on\s+)?[\"']?(\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4})\b", re.IGNORECASE)
 SECRET_RES = [
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key id
     re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_-]{20,}"),  # OpenAI / Anthropic / OpenRouter
@@ -99,6 +101,8 @@ def find_sensitive(text: str) -> list[Span]:
             spans.append(Span(m.start(), m.end(), "PESEL", m.group(), "pii.pesel"))
     for m in PASSPORT_RE.finditer(text):
         spans.append(Span(m.start(1), m.end(1), "PASSPORT", m.group(1), "pii.passport"))
+    for m in DOB_RE.finditer(text):
+        spans.append(Span(m.start(1), m.end(1), "DOB", m.group(1), "pii.dob"))
     for rx in SECRET_RES:
         for m in rx.finditer(text):
             spans.append(Span(m.start(), m.end(), "SECRET", m.group(), "secrets"))
