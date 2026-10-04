@@ -148,10 +148,32 @@ injected instruction; the demo and the tests use it to show the controls, not th
 ```yaml
 budgets:
   session: {max_tokens: 60000, max_cost_usd: 0.05, max_tool_calls: 20, max_compute_seconds: 300}
+  daily:   {max_tokens: 300000, max_cost_usd: 1.00}      # per person per day (UTC), all sessions together
+roles:
+  developer: {budget: {max_tokens: 2000000, max_cost_usd: 0.25, ...}, daily_budget: {max_tokens: 10000000, max_cost_usd: 30.00}}
 ```
 
-Limits per session. A role can raise or lower any of them (`roles.developer.budget`: Claude Code sends ~16k tokens
-per request).
+Budgets are **defined per role and counted per person**: the policy has one line per role, never one per person.
+
+- **Per session** stops runaway loops (the scripted "keep running the tests" agent is stopped after 20 tool calls).
+- **Per person per day** caps what one person's agents use, however many sessions they open. It is rebuilt from the
+  audit log when the gateway starts, so a restart does not hand out a fresh budget.
+- A role raises or lowers either with `budget` and `daily_budget`.
+
+The daily numbers are anchored in published usage:
+
+| Role | Per day | Basis |
+|---|---|---|
+| developer (Claude Code) | 10M tokens, $30 | Anthropic: Claude Code averages ~$13 per developer per active day; 90% stay under $30 |
+| onboarding analyst | 2M tokens, $6 | ~20 cases a day × ~60k tokens of client documents, with headroom |
+| M&A banker | 1M tokens, $3 | chat plus ~10 long documents (filings, memos) a day |
+| everyone else | 300k tokens, $1 | ~50 support conversations × ~4k tokens (Anthropic's pricing examples) |
+
+Tokens are model-independent: 10M tokens cost about $1.20 on DeepSeek flash and about $28 on a frontier model, so
+switching models changes the bill, not the policy.
+
+Not built (roadmap): a monthly pool per team or cost centre (what finance manages, needs the team in the directory),
+and counters shared between several gateway instances (e.g. Redis); today they live in one gateway process.
 
 ## Identity
 

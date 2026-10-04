@@ -131,6 +131,34 @@ class Engine:
         self.audit = audit
         self.judge = judge
         self.sessions: dict[str, Session] = {}
+        # Per person per day (UTC): {(user, "2026-10-04"): {"tokens": .., "cost_usd": ..}}. Rebuilt from the audit log on
+        # start, so a restart does not hand everyone a fresh daily budget.
+        self.daily: dict[tuple[str, str], dict[str, float]] = {}
+        self._rebuild_daily()
+
+    @staticmethod
+    def _today(ts: float | None = None) -> str:
+        return time.strftime("%Y-%m-%d", time.gmtime(ts if ts is not None else time.time()))
+
+    def _rebuild_daily(self) -> None:
+        last: dict[str, tuple[str, str, dict]] = {}  # session -> (user, day, its latest cumulative usage)
+        for e in self.audit.events:
+            if e.get("type") == "exchange" and e.get("user") and e.get("session"):
+                last[e["session"]] = (e["user"], self._today(e.get("ts")), e.get("usage") or {})
+        for user, day, u in last.values():
+            d = self.daily.setdefault((user, day), {"tokens": 0, "cost_usd": 0.0})
+            d["tokens"] += int(u.get("tokens") or 0)
+            d["cost_usd"] += float(u.get("cost_usd") or 0.0)
+
+    def daily_used(self, user: str) -> dict[str, float]:
+        return self.daily.get((user, self._today()), {"tokens": 0, "cost_usd": 0.0})
+
+    def _over_daily(self, p: Policy, user: str) -> str | None:
+        used, b = self.daily_used(user), p.daily_budget_for(user)
+        for key, have in (("max_tokens", used["tokens"]), ("max_cost_usd", used["cost_usd"])):
+            if key in b and have >= b[key]:
+                return f"daily budget for {user} exhausted: {key}={b[key]} (used {round(have, 4)} today, all sessions)"
+        return None
 
     def session(self, sid: str, user: str, agent: str = "unknown-agent", purpose: str | None = None) -> Session:
         if sid not in self.sessions:
@@ -382,7 +410,7 @@ class Engine:
                 return stop(Decision("models.allowlist", "block", "model", f"model {model!r} is not in the policy's allowed models"))
             ex.decisions.append(Decision("models.allowlist", "flag", "model",
                                          f"model {model!r} is not approved; let through and recorded (monitor mode), default data class only"))
-        if (over := self._over_budget(p, s)) and p.action("budget") != "allow":
+        if (over := self._over_budget(p, s) or self._over_daily(p, s.user)) and p.action("budget") != "allow":
             d = Decision("budget", p.action("budget"), "session", over)
             if d.action == "block":
                 return stop(d)
@@ -535,12 +563,17 @@ class Engine:
         ex.model_served = resp.get("model")
         ex.provider = resp.get("provider")
         usage = resp.get("usage") or {}
-        s.tokens += int(usage.get("total_tokens") or 0)
+        tokens = int(usage.get("total_tokens") or 0)
         mcfg = p.models.get(ex.model, {})
         if usage.get("cost") is not None:
-            s.cost_usd += float(usage["cost"])
+            cost = float(usage["cost"])
         else:
-            s.cost_usd += (usage.get("prompt_tokens", 0) * mcfg.get("input_per_m", 0) + usage.get("completion_tokens", 0) * mcfg.get("output_per_m", 0)) / 1e6
+            cost = (usage.get("prompt_tokens", 0) * mcfg.get("input_per_m", 0) + usage.get("completion_tokens", 0) * mcfg.get("output_per_m", 0)) / 1e6
+        s.tokens += tokens
+        s.cost_usd += cost
+        day = self.daily.setdefault((s.user, self._today()), {"tokens": 0, "cost_usd": 0.0})
+        day["tokens"] += tokens
+        day["cost_usd"] += cost
         if mcfg.get("upstream") == "ollama":
             s.compute_s += upstream_ms / 1000
 
@@ -740,4 +773,10 @@ class Engine:
             "sessions": {sid: {"user": s.user, "agent": s.agent, **s.usage(), **self._budget_view(p, s)}
                          for sid, s in self.sessions.items()},
             "budget": p.session_budget,
+            # Per person, today (UTC), against the daily budget of their role.
+            "daily": {u: {"tokens": d["tokens"], "cost_usd": round(d["cost_usd"], 6), "limits": p.daily_budget_for(u),
+                          "share": max([d["tokens"] / v for k, v in p.daily_budget_for(u).items() if k == "max_tokens" and v]
+                                       + [d["cost_usd"] / v for k, v in p.daily_budget_for(u).items() if k == "max_cost_usd" and v]
+                                       + [0.0])}
+                      for (u, day), d in self.daily.items() if day == self._today()},
         }

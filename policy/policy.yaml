@@ -105,12 +105,19 @@ models:
   qwen3:4b:                     {upstream: ollama}
   mock/compromised:             {upstream: mock}   # scripted model that obeys injected instructions (demo + tests)
 
+# Budgets are defined per role (never per person) and counted per person. `session` stops runaway loops; `daily`
+# caps what one person's agents may use per day (UTC), whatever the number of sessions. Roles raise or lower them
+# with `budget` (session) and `daily_budget`. Tokens are model-independent: switching models changes the bill, not
+# the policy. Reference: Claude Code averages ~$13 per developer per active day, 90% stay under $30 (Anthropic docs).
 budgets:
   session:
     max_tokens: 60000
     max_cost_usd: 0.05
     max_tool_calls: 20
     max_compute_seconds: 300
+  daily:                     # per person per day; light chat use (support: ~50 conversations x ~4k tokens)
+    max_tokens: 300000
+    max_cost_usd: 1.00
 
 # Who is calling (US-1.2). api_key: every request presents a key (Authorization: Bearer) that maps to one
 # (user, agent) pair in identities.yaml; no key = denied, and the agent gets exactly that user's role.
@@ -125,11 +132,16 @@ identity:
 roles:
   support_junior:     {tools: [get_customer, send_email]}
   fraud_analyst:      {tools: [get_customer, send_email, charge_card]}
-  onboarding_analyst: {tools: [get_client_file, screen_sanctions, search_documents, query_datalake, send_email]}
-  mna_banker:         {tools: [search_documents, query_datalake, send_email]}
+  onboarding_analyst:                          # ~20 cases a day x ~60k tokens of client documents, with headroom
+    tools: [get_client_file, screen_sanctions, search_documents, query_datalake, send_email]
+    daily_budget: {max_tokens: 2000000, max_cost_usd: 6.00}
+  mna_banker:                                  # chat plus ~10 long documents (filings, memos) a day
+    tools: [search_documents, query_datalake, send_email]
+    daily_budget: {max_tokens: 1000000, max_cost_usd: 3.00}
   developer:                                   # devon's scripted agent and Claude Code (the capitalised names)
     tools: [list_files, read_file, run_tests, http_post, Read, Glob, Grep, Edit, Write, Bash, WebFetch, TodoWrite]
-    budget: {max_tokens: 2000000, max_compute_seconds: 1800}   # Claude Code sends ~16k tokens per request
+    budget: {max_tokens: 2000000, max_cost_usd: 0.25, max_compute_seconds: 1800}   # Claude Code sends ~16k tokens per request
+    daily_budget: {max_tokens: 10000000, max_cost_usd: 30.00}   # Claude Code's 90th percentile: normal work never blocked
   hr_admin:           {tools: [get_employee, get_hr_policy], redact_purpose: true}   # HR administration; never judging people (access.purpose); X-Purpose not reported (D8)
   default:            {tools: []}
 

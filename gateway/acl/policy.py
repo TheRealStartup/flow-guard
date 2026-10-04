@@ -161,6 +161,11 @@ class Policy:
         role = self.raw.get("roles", {}).get(self.role_of(user), {})
         return {**self.session_budget, **role.get("budget", {})}
 
+    def daily_budget_for(self, user: str) -> dict[str, float]:
+        """What one person's agents may use per day (UTC): the default, with the role's own limits on top."""
+        role = self.raw.get("roles", {}).get(self.role_of(user), {})
+        return {**self.raw.get("budgets", {}).get("daily", {}), **role.get("daily_budget", {})}
+
     def sinks(self, kind: str) -> list[str]:
         return self.raw.get("sinks", {}).get(kind, [])
 

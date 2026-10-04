@@ -22,10 +22,10 @@ type Details = {
   levels: string[];
   upstreams: string[];
   supported_actions: Record<string, Action[]>;
-  budgets: { session?: { max_tokens?: number; max_cost_usd?: number; max_tool_calls?: number; max_compute_seconds?: number } };
+  budgets: { session?: Budget; daily?: Budget };
   identity: { mode: string; require_purpose: boolean; keys: { user: string; agent: string }[] };
   users: Record<string, { role: string; side?: string; assigned_clients?: string[]; deals?: number }>; // deals: a count, ids are codenames
-  roles: Record<string, { tools: string[]; budget?: Budget }>;
+  roles: Record<string, { tools: string[]; budget?: Budget; daily_budget?: Budget }>;
   sinks: { external?: string[]; detokenize?: string[] };
   scopes: Record<string, { argument: string; user_field: string }>;
   barriers: { public_message: string; restricted: { terms: number }[] };
@@ -368,33 +368,43 @@ function Models({ d, onChanged }: { d: Details; onChanged: () => void }) {
 const fmtBudget = (b: Budget) =>
   [
     b.max_cost_usd != null && `$${b.max_cost_usd}`,
-    b.max_tokens != null && `${(b.max_tokens / 1000).toLocaleString("en-US")}k tokens`,
+    b.max_tokens != null && (b.max_tokens >= 1e6 ? `${+(b.max_tokens / 1e6).toFixed(1)}M tokens` : `${(b.max_tokens / 1000).toLocaleString("en-US")}k tokens`),
     b.max_tool_calls != null && `${b.max_tool_calls} tool calls`,
     b.max_compute_seconds != null && `${b.max_compute_seconds} s compute`,
   ]
     .filter(Boolean)
     .join(" · ");
 
-function Budgets({ d }: { d: Details }) {
-  const base = d.budgets.session ?? {};
-  const overrides = Object.entries(d.roles).filter(([, r]) => r.budget);
+function BudgetRows({ base, roles }: { base: Budget; roles: [string, Budget | undefined][] }) {
   return (
-    <Panel>
-      <PanelHeader title="Session budgets" />
-      <dl className="flex flex-col gap-2 px-6 py-4 text-[15px]">
-        <div className="flex gap-3">
-          <dt className="text-muted-foreground">Every role</dt>
-          <dd className="ml-auto text-right font-mono text-sm">{fmtBudget(base)}</dd>
-        </div>
-        {overrides.map(([role, r]) => (
+    <dl className="flex flex-col gap-2 px-6 py-3 text-[15px]">
+      <div className="flex gap-3">
+        <dt className="text-muted-foreground">Every role</dt>
+        <dd className="ml-auto text-right font-mono text-sm">{fmtBudget(base)}</dd>
+      </div>
+      {roles
+        .filter(([, b]) => b)
+        .map(([role, b]) => (
           <div key={role} className="flex gap-3">
             <dt className="text-muted-foreground">{role}</dt>
-            <dd className="ml-auto text-right font-mono text-sm">{fmtBudget({ ...base, ...r.budget })}</dd>
+            <dd className="ml-auto text-right font-mono text-sm">{fmtBudget({ ...base, ...b })}</dd>
           </div>
         ))}
-      </dl>
+    </dl>
+  );
+}
+
+function Budgets({ d }: { d: Details }) {
+  const roles = Object.entries(d.roles);
+  return (
+    <Panel>
+      <PanelHeader title="Budgets" />
+      <div className="px-6 pt-3 text-sm font-medium">Per session · stops runaway loops</div>
+      <BudgetRows base={d.budgets.session ?? {}} roles={roles.map(([n, r]) => [n, r.budget])} />
+      <div className="border-t px-6 pt-3 text-sm font-medium">Per person per day (UTC) · all sessions together</div>
+      <BudgetRows base={d.budgets.daily ?? {}} roles={roles.map(([n, r]) => [n, r.daily_budget])} />
       <p className="border-t px-6 py-3 text-sm text-muted-foreground">
-        Per role, never per person. Whichever limit is hit first stops the session (action: {d.controls.budget?.action}).
+        Defined per role, counted per person. Whichever limit is hit first stops the agent (action: {d.controls.budget?.action}).
       </p>
     </Panel>
   );

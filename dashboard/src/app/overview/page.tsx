@@ -27,6 +27,8 @@ type Metrics = {
     }
   >;
   budget: { max_tokens: number; max_cost_usd: number; max_tool_calls: number; max_compute_seconds: number };
+  // Per person, today (UTC), against the daily budget of their role; computed by the gateway.
+  daily?: Record<string, { tokens: number; cost_usd: number; limits: { max_tokens?: number; max_cost_usd?: number }; share: number }>;
 };
 
 const D3_TARGET_MS = 300; // decision D3: p95 target for the rule path, AI judge reported separately
@@ -370,7 +372,7 @@ function Actors({ o }: { o: Overview }) {
 }
 
 const LIMIT: Record<string, { label: string; fmt: (v: number) => string }> = {
-  max_tokens: { label: "Tokens", fmt: (v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)) },
+  max_tokens: { label: "Tokens", fmt: (v) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)) },
   max_cost_usd: { label: "Cost", fmt: (v) => `$${v.toFixed(2)}` },
   max_tool_calls: { label: "Tool calls", fmt: (v) => String(v) },
   max_compute_seconds: { label: "Compute", fmt: (v) => `${Math.round(v)} s` },
@@ -411,6 +413,28 @@ function Budgets({ metrics }: { metrics: Metrics | null }) {
           ))}
           {metrics && !rows.length && <Empty text="No live sessions." />}
         </div>
+        {metrics?.daily && Object.keys(metrics.daily).length > 0 && (
+          <>
+            <p className="mt-6 mb-3 text-sm text-muted-foreground">Per person today (UTC), all sessions together, against the daily budget of their role.</p>
+            <div className="flex flex-col gap-3">
+              {Object.entries(metrics.daily)
+                .sort(([, a], [, b]) => b.share - a.share)
+                .slice(0, 6)
+                .map(([user, u]) => (
+                  <div key={user}>
+                    <div className="mb-1 flex items-baseline gap-2 text-sm">
+                      <span className="font-mono">{user}</span>
+                      <span className="ml-auto shrink-0 text-muted-foreground">
+                        {LIMIT.max_tokens.fmt(u.tokens)} of {u.limits.max_tokens != null ? LIMIT.max_tokens.fmt(u.limits.max_tokens) : "∞"} tokens ·{" "}
+                        {LIMIT.max_cost_usd.fmt(u.cost_usd)} of {u.limits.max_cost_usd != null ? LIMIT.max_cost_usd.fmt(u.limits.max_cost_usd) : "∞"} ({Math.round(u.share * 100)}%)
+                      </span>
+                    </div>
+                    <Meter value={Math.min(u.share, 1)} max={1} label={`${user} daily budget`} />
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
       </div>
     </Panel>
   );

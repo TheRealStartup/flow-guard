@@ -552,3 +552,42 @@ def test_metrics_report_each_session_against_its_own_role_budget(gw):
     pol = gw.app.state.engine.policies.get()
     assert s["dev-b"]["limits"] == pol.budget_for("devon") != pol.budget_for("alice") == s["sup-b"]["limits"]
     assert s["dev-b"]["agent"] == "coding-assistant" and s["dev-b"]["nearest"]["limit_name"] in s["dev-b"]["limits"]
+
+
+# ---------- daily budget: defined per role, counted per person across all sessions, survives a restart ----------
+
+def _ask(gw, user, session):
+    gw.upstream.next_reply = {"text": "ok"}  # the scripted upstream reports 15 tokens per call
+    return gw.chat(user, [{"role": "user", "content": "hi"}], session=session).json()
+
+
+def test_daily_budget_counts_all_sessions_of_one_person(gw):
+    gw.edit_policy(lambda p: p["budgets"].update(daily={"max_tokens": 40, "max_cost_usd": 100}))
+    for i in range(3):  # 3 sessions x 15 tokens = 45 >= 40: a new session does not reset it
+        assert _ask(gw, "alice", f"a{i}")["acl"]["outcome"] != "blocked"
+    r = _ask(gw, "alice", "a-new")
+    assert r["acl"]["outcome"] == "blocked" and "daily budget for alice" in r["acl"]["decisions"][-1]["reason"]
+    assert _ask(gw, "bob", "b0")["acl"]["outcome"] != "blocked"  # counted per person
+    daily = gw.client.get("/api/metrics").json()["daily"]
+    assert daily["alice"]["tokens"] == 45 and daily["alice"]["share"] >= 1 and daily["bob"]["tokens"] == 15
+
+
+def test_daily_budget_is_set_per_role(gw):
+    gw.edit_policy(lambda p: (p["budgets"].update(daily={"max_tokens": 20}),
+                              p["roles"]["developer"].update(daily_budget={"max_tokens": 1000})))
+    _ask(gw, "alice", "a0"), _ask(gw, "alice", "a1")
+    assert _ask(gw, "alice", "a2")["acl"]["outcome"] == "blocked"
+    for i in range(3):
+        assert _ask(gw, "devon", f"d{i}")["acl"]["outcome"] != "blocked"  # the developer role allows more
+
+
+def test_daily_budget_survives_a_gateway_restart(gw):
+    from fastapi.testclient import TestClient
+    from main import create_app
+
+    gw.edit_policy(lambda p: p["budgets"].update(daily={"max_tokens": 40}))
+    for i in range(3):
+        _ask(gw, "alice", f"r{i}")
+    gw.app = create_app(gw.policy_path, gw.app.state.engine.audit.path, gw.judge, gw.upstream)  # restart, same audit log
+    gw.client = TestClient(gw.app)
+    assert _ask(gw, "alice", "after-restart")["acl"]["outcome"] == "blocked"
