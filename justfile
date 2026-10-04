@@ -76,6 +76,10 @@ bench-pii:
 bench-injection:
     cd gateway && set -a && . ./.env && set +a && uv run --with pyarrow python ../bench/injection_bench.py
 
+# the same benchmark with the on-premise judge PIGuard (CPU; weights in bench/models/piguard/, see bench/piguard_judge.py)
+bench-piguard:
+    cd gateway && set -a && . ./.env && set +a && uv run --with torch --with transformers --with pyarrow --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match python ../bench/injection_bench.py --judges demo,jev,piguard
+
 # end to end: does data leave with no gateway, detection only, full gateway? (no network)
 bench-e2e:
     cd gateway && uv run python ../bench/e2e_bench.py

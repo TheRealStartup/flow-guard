@@ -138,12 +138,22 @@ async def run(judges: list[str], n_deepset: int, n_jail: int) -> dict:
     sets = load_sets(n_deepset, n_jail)
     jev = CachedJev() if "jev" in judges else None
     demo = DemoJudge()
+    piguard = None
+    if "piguard" in judges:
+        from piguard_judge import PIGuardJudge
+        piguard = PIGuardJudge()
     report: dict = {"thresholds": THRESHOLDS, "sets": {}, "judges": judges}
     for judge in judges:
         for name, cases in sets.items():
             t0 = time.perf_counter()
             if judge == "jev":
                 res = await asyncio.gather(*(jev.score(src, text) for _, _, src, text in cases))
+            elif judge == "piguard":
+                res = []
+                for _, _, src, text in cases:
+                    t = time.perf_counter()
+                    p = piguard.score(text)
+                    res.append((p, (time.perf_counter() - t) * 1000))
             else:
                 res = [((await demo.judge(text, src, 1)).injection, None) for _, _, src, text in cases]
             scored = [(p, y, cid) for (p, ms), (cid, y, _, _) in zip(res, cases) if p is not None]
