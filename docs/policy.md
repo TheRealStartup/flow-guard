@@ -34,7 +34,7 @@ agent ──request──▶ gateway ──▶ model provider            model �
   1 identity + purpose                                      7 access.tools   (role may use this tool?)
   2 models.allowlist, budget                                8 access.scope   (argument inside the user's scope?)
   3 signatures (prompt, tool results)                       9 signatures     (tool arguments)
-  4 barrier.mnpi, pii.*, secrets → tokens                  10 flow.sensitive_to_external (+ egress for Bash)
+  4 classes, barrier.mnpi, pii.*, secrets                  10 flow.sensitive_to_external (+ egress for Bash)
   5 injection.jev (prompt: jailbreak; tool result: injection)  11 budget (tool calls)
   6 spotlight (tool results wrapped as data)               12 tokens → real values, only for detokenize sinks
 ```
@@ -51,15 +51,55 @@ agent ──request──▶ gateway ──▶ model provider            model �
 | `pii.passport` | redact | passport numbers | only where the text labels them as a passport, must contain a digit |
 | `secrets` | redact | API keys and credentials leaving with the context | provider key prefixes, private keys, credentials in URLs, `KEY=value` assignments with secret-looking values |
 | `barrier.mnpi` | redact | material non-public information crossing the information barrier | results naming a restricted deal are withheld from anyone not on that deal; the reply does not confirm the deal exists |
+| `access.datalake` | block | an agent writing its own queries against firm data | the agent may only name a query from the `datalake` catalog its role may run; refused before it runs if the result could not be sent on |
 | `access.scope` | block | an agent reaching beyond its human's remit | tool arguments must be in the user's scope (e.g. only assigned clients) |
 | `signatures` | block | known attacks from outside intelligence | regexes from the feed, matched where each signature says |
 | `access.tools` | block | an agent using tools its human may not | role → tool list |
 | `flow.sensitive_to_external` | block | data leaving the organisation, whatever the model was tricked into | a call to an external sink is dropped if it carries sensitive data (`mode: value`) or, stricter, once the session has seen any (`mode: session`) |
-| `injection.jev` | redact | instructions hidden in data the agent reads (ForcedLeak, EchoLeak) | TypeSafe's Jev model scores each text; above `threshold` the text is quarantined (`redact`) or the request stopped (`block`); JSON tool results are judged field by field so one poisoned field does not cost the whole record |
+| `injection.jev` | redact | instructions hidden in data the agent reads (ForcedLeak, EchoLeak) | TypeSafe's Jev model scores each text (never above its `max_class`: Jev is an outside service); above `threshold` the text is quarantined (`redact`) or the request stopped (`block`); JSON tool results are judged field by field so one poisoned field does not cost the whole record |
 | `spotlight` | flag | the model confusing data with instructions | tool results are wrapped in `<<tool_data id=…>>` markers with a note that they are data; tool data faking the marker is escaped and flagged (or blocked) |
 
 Detectors are tuned against false positives: checksums for numbers, whole-word keys for secrets. An uncertain match
 (the secrets heuristic) is redacted but does not mark the session as holding sensitive data.
+
+## Data classes
+
+```yaml
+classification:
+  levels: [public, internal, P2, DP30]   # lowest first
+  max_to_model: P2
+  default: internal
+  action: redact                         # redact: withhold with the neutral barrier message | block: stop the request
+  tools: {get_client_file: P2, get_customer: internal, ...}
+```
+
+Before any model or judge sees a message, it gets a class from a trusted source, never from the model: the tool
+that returned it (`tools`), a restricted deal term it names (`barriers.restricted[].class`, e.g. Project Falcon is
+DP30), or the data-lake query that produced it. A tool not listed is unclassified and treated as above every limit.
+Tokenising identifiers never lowers a class.
+
+Each destination has a limit: `max_to_model` for every model, a model's own `max_class` below that, and
+`injection.jev.max_class` for the outside judge (`internal`: Jev never receives P2 or DP30). Content above the limit is
+withheld. A tool result that may reach the model but not Jev cannot be injection-checked, so that request is blocked.
+
+## Data lake
+
+```yaml
+datalake:
+  tool: query_datalake
+  argument: query
+  datasets:        {fx_reference: {class: public}, client_positions: {class: P2}, deal_pipeline: {class: DP30}}
+  transformations: {sector_counts: {class: internal, from: deal_pipeline, count_by: sector, min_group: 3}}
+  queries:
+    client_positions:   {dataset: client_positions,     roles: [onboarding_analyst]}
+    pipeline_by_sector: {transformation: sector_counts, roles: [mna_banker]}
+```
+
+The agent never writes a query; it names one from `queries`. A query is refused before it runs if the user's role is
+not listed, or if its class is above what the model (and Jev, while the AI check is on) may receive; every refusal
+gives the same neutral reason. Each result carries the lake's own class label; a missing or mismatching label leaves
+it unclassified, so it is withheld. A lower-class view of a dataset exists only as a listed transformation: the deal
+team's agent may see how many live deals each sector has (groups under `min_group` suppressed), never the deals.
 
 ## Profiles
 
