@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,9 @@ import yaml
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
+# Importing gateway/main.py builds the default app, which records "policy loaded" in its audit log. Point it at a
+# throwaway file before anything imports main, so a test run never writes into the real (demo) audit log.
+os.environ["ACL_AUDIT"] = str(Path(tempfile.mkdtemp(prefix="acl-tests-")) / "audit.jsonl")
 sys.path.insert(0, str(ROOT / "gateway"))
 sys.path.insert(0, str(ROOT / "demo"))
 
