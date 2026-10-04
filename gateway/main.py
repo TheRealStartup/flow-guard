@@ -53,7 +53,7 @@ def create_app(policy_path: Path, audit_path: Path, judge: Judge | None, upstrea
     policies.get()  # fail at startup, not on the first request, if the policy is broken
     engine = Engine(policies, audit, judge)
 
-    app = FastAPI(title="AI Control Layer")
+    app = FastAPI(title="FlowGuard")
     app.state.engine = engine
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.include_router(llm_router(engine, upstream))

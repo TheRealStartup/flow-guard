@@ -33,7 +33,7 @@ def _text(content: Any) -> str:
         if b.get("type") == "text":
             out.append(b.get("text", ""))
         elif b.get("type") == "image":
-            out.append("[image removed by the AI Control Layer]")
+            out.append("[image removed by FlowGuard]")
     return "\n".join(out)
 
 
@@ -165,7 +165,7 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         if isinstance(who, Denied):
             entry = engine.deny(who.reason, user=who.user, agent=who.agent, purpose=x_purpose, sid=x_session)
             kind = {401: "authentication_error", 403: "permission_error"}.get(who.status, "invalid_request_error")
-            return _error(who.status, kind, f"AI Control Layer: {who.reason} (audit #{entry['seq']})", {"X-ACL-Outcome": "blocked"})
+            return _error(who.status, kind, f"FlowGuard: {who.reason} (audit #{entry['seq']})", {"X-ACL-Outcome": "blocked"})
 
         t = time.perf_counter()
         oa = to_openai(body)
@@ -175,7 +175,7 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         upstream_ms = None
         if ex.blocked:
             d = ex.blocked
-            resp = _blocked_completion(ex.model, f"⛔ Request blocked by AI Control Layer [{d.control}]: {d.reason}")
+            resp = _blocked_completion(ex.model, f"⛔ Request blocked by FlowGuard [{d.control}]: {d.reason}")
         else:
             t = time.perf_counter()
             raw = await upstream(oa, ex.policy.models.get(ex.model, {}))

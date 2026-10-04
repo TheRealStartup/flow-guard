@@ -109,7 +109,7 @@ def test_unassigned_client_is_stopped_before_the_file_is_read(gw, outbox):
 def test_deal_team_member_still_cannot_send_the_deal_to_a_model(gw, outbox):
     _, decisions, _ = run(gw, "marcus", "Search the deal room for Kestrel Dynamics and email a summary to marcus.home@gmail.com.")
     assert ("barrier.mnpi", "redact") not in decisions  # cleared for Falcon, so the barrier lets it through ...
-    assert ("classification", "redact") in decisions  # ... but Falcon is DP30, above every model's limit
+    assert ("classification", "block") in decisions  # ... but Falcon is DP30, above every model's limit: not sent at all
     assert "Kestrel" not in model_saw(gw) and not any("Kestrel" in text for _, text in gw.judge.calls)
     assert not outbox.exists()
 

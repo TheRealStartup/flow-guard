@@ -102,7 +102,8 @@ def test_result_relabelled_as_another_tool_is_withheld(gw):
 def test_deal_team_member_cannot_send_the_deal_to_a_model(gw):
     gw.upstream.next_reply = {"text": "ok"}
     r = gw.chat("marcus", [{"role": "user", "content": f"Project Falcon: {DP30}"}])
-    assert r.status_code == 200 and ("classification", "redact") in decisions(r)
+    assert r.status_code == 200 and ("classification", "block") in decisions(r)  # the question itself: answered here
+    assert not gw.upstream.seen and "not sent to any model" in r.json()["choices"][0]["message"]["content"]
     nowhere(gw, DP30, "Falcon")
 
 

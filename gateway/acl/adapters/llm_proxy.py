@@ -64,7 +64,7 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         x_purpose: str | None = Header(default=None),
     ):
         if body.get("stream"):
-            raise HTTPException(400, "streaming is not supported yet by the AI Control Layer (MVP); send stream=false")
+            raise HTTPException(400, "streaming is not supported yet by FlowGuard (MVP); send stream=false")
 
         # --- identity (US-1.2): who is the agent, and for which human? ---
         key = authorization.removeprefix("Bearer ").strip() if authorization else None
@@ -79,7 +79,7 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         upstream_ms = None
         if ex.blocked:
             d = ex.blocked
-            resp = _blocked_completion(ex.model, f"⛔ Request blocked by AI Control Layer [{d.control}]: {d.reason}")
+            resp = _blocked_completion(ex.model, f"⛔ Request blocked by FlowGuard [{d.control}]: {d.reason}")
         else:
             t = time.perf_counter()
             raw = await upstream(body, ex.policy.models.get(ex.model, {}))
