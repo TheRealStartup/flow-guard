@@ -4,8 +4,9 @@ Deck: [flow-guard-demo-v2.pptx](flow-guard-demo-v2.pptx), **10 slides, 3 minutes
 (the old 13-slide [flow-guard-demo.pptx](flow-guard-demo.pptx) is kept for reference). The demo happens at the table during judging, when the judges type their
 own prompts and edit `policy/policy.yaml` anyway; that part is below, after the pitch.
 
-**How 10 slides fit in 3 minutes:** the slides are pictures, not text. Three of them carry the talking (2 the story,
-5 the idea, 8 the numbers); the others are glance slides of 5 to 15 seconds with one spoken line each. Rule for every
+**How 10 slides fit in 3 minutes:** the slides are pictures, not text. Four of them carry the talking (2 the story,
+5 the idea, 6 the architecture, 7 the numbers); the others are glance slides of 5 to 15 seconds with one spoken line
+each, and slide 10 is the Q&A backdrop, not spoken. Rule for every
 slide: one picture, one headline, at most about 12 more words on the slide. If it needs a paragraph, it's a speaker note.
 
 | # | Slide | Time | Picture | Scores on |
@@ -15,11 +16,11 @@ slide: one picture, one headline, at most about 12 more words on the slide. If i
 | 3 | This already happens | 10 s | three big numbers | practicality |
 | 4 | Goldman's map: we build layers 3 and 4 | 10 s | four-layer stack | practicality |
 | 5 | Don't trust the agent. Trust the flow. | 30 s | token flow diagram | guardrail robustness |
-| 6 | One engine, every door | 25 s | architecture diagram | architecture and performance |
-| 7 | Three agents, three attacks | 15 s | three before/after cards | guardrail robustness |
-| 8 | Measured, not claimed | 25 s | leak bar chart + big numbers | test suite, robustness |
-| 9 | Every decision on the record | 15 s | dashboard screenshot with callouts | reporting |
-| 10 | Monday, 09:04, again | 20 s | the strip from slide 2, each panel stopped | the close |
+| 6 | Every action crosses three checkpoints | 30 s | architecture diagram: three checkpoints + what sits underneath | architecture and performance |
+| 7 | Measured, not claimed | 30 s | two big judge numbers (97.5% caught, 0% false alarms) + three tiles | robustness, test suite |
+| 8 | Every decision on the record | 15 s | audit entry with callouts + regulation row | reporting |
+| 9 | Monday, 09:04, again | 20 s | four outcome cards | the close |
+| 10 | Limits today and what comes next | Q&A | limits left, next steps right | credibility |
 
 About 400 spoken words. Rehearse with a timer: if you run over, cut the lines marked *(cut first)*, never slide 5.
 Roles: **Presenter** (talks) and **Driver** (clicks; at the table, drives the demo).
@@ -38,13 +39,15 @@ Every slide, every demo beat, every answer in Q&A comes back to this sentence. I
 - [ ] `just gateway` and `just dashboard` (two terminals; Docker works too: `docker compose up --build -d --wait`), then open
       http://localhost:3000/overview and `/audit` side by side, ready for the table demo.
 - [ ] `just demo-data deepseek/deepseek-v4.1-flash` once, so the dashboard is not empty and you have a **recorded backup** of every scenario.
-- [ ] Run `just test` and **put the passing test count on slide 8** (365 passed, 1 skipped on Sun ~08:30; use the number
-      `just test` prints, not this one).
-- [ ] Check every number on slides 3 and 8 against `docs/goldman-cases.md` and `docs/benchmarks.md`, and the CIO line on
+- [ ] Run `just test` and check the test count on slides 6 and 7 ("450+"). On main at 2405b5c: 457 passed, 1 failed
+      (`test_timeseries_counts_this_minute`, looks like a minute-boundary flake), 1 skipped, in about 2 min 20 s, so
+      don't say "under a minute".
+- [ ] Check every number on slides 3 and 7 against `docs/goldman-cases.md` and the benchmark results, and the CIO line on
       slide 4 against `docs/goldman-context.md`. Never quote a line you have not read at the source.
-      The detector numbers depend on the threshold: the live policy runs Jev at 0.40, where the benchmark gives
-      *at least* 95% of the successful real attacks (95% at 0.5); 98.7% is at the calibrated 0.29, so don't put 98.7% on
-      the slide unless you also say "at a calibrated threshold".
+      Slide 7's judge numbers are Jev at the deployed threshold 0.40 from the judge benchmark of Sun 4 Oct: 97.5% of 519
+      LLMail attacks that stole data, 0.0% of 993 banking77 customer questions. **That table is not committed yet**;
+      commit it (e.g. to `docs/benchmarks.md`) and point slide 7's source line at it. The 0% is for banking77 only:
+      on 982 Enron business emails it is 0.4%, on NotInject 2.3%. Say so if asked.
 - [ ] **Internet required for the table demo.** The model (DeepSeek via OpenRouter) and the injection judge (Jev,
       api.typesafe.ai) are outside services, and the judge fails closed: without a connection every request with new tool
       data is blocked. Check `curl -s localhost:8000/api/health` shows `"judge":"jev"` and run Act 1 once. Offline
@@ -84,55 +87,52 @@ real value (green) · `send_email` dropped and logged (red). Bottom line: "A foo
 > When the agent calls the sanctions check, we put the real number back. When the same token heads for an email, the
 > call is dropped and logged. **A fooled model has nothing to leak.**"
 
-**Slide 6: One engine, every door** *(25 s)*. Follow the request left to right.
-On the slide: the simplified architecture. Agents (bank agents, Claude Code) → two doors (OpenAI format, Anthropic format)
-→ one policy engine with three chips: **Who** · **What** · **How much** → model vendors get tokens only; tools: internal get
-the real value, external get dropped. Underneath: `policy.yaml` (live reload) and the audit chain → dashboard.
-Dashed: MCP gateway, four-eyes approval (next). One small latency label: "detectors < 0.02 ms · AI judge measured separately".
-> "Agents change one line: their base URL. Our bank agents and the real Claude Code go through one policy engine.
-> It asks every request three questions: who is asking and why, what data is in it and where it may go, and how much
-> damage it can do. One YAML file, reloaded while it runs."
+**Slide 6: Every action crosses three checkpoints** *(30 s)*. Follow the request left to right, then point at the bottom row.
+On the slide: AI agent (one API key per user + agent, a stated purpose) → **1 Before the model** (who and why, values →
+tokens, injected text quarantined, data-class limit per model; "the model sees `[[CARD#3f2a1b ****1111]]`") → approved model
+(sees tokens only) → **2 Before the agent acts** (role → tools, own clients only, information barrier, budgets, signatures)
+→ bank systems, and **3 Before data leaves** (client data never to email or web; real values only to approved tools).
+A dashed loop: tool results come back through checkpoint 1. Underneath: policy as code · injection judge · evidence · fail closed.
+> "Every agent action crosses three checkpoints. Before the model: who is asking and why, and sensitive values become tokens.
+> Before the agent acts: its role, only its user's clients, the information barrier, budgets.
+> Before data leaves: client data never goes to email or the web.
+> Underneath: one YAML policy, an injection judge, a hash-chained log, and every check fails closed." *(cut first: the last sentence)*
 
-**Slide 7: Three agents, three attacks** *(15 s)*
-On the slide: three cards, each a red attack line above a green result line, with a small screenshot:
-*Olivia: poisoned client document → field quarantined, passport only to the sanctions check* ·
-*Marcus: deal memo sent outside → blocked, the public side never learns it exists* ·
-*Devon (real Claude Code): secret and endless loop → key hidden, budget stops the loop*. Footer: "Try them at our table."
-> "Three agents, three attacks. A poisoned client document: quarantined. A deal memo sent outside: blocked.
-> A coding agent with a secret and an endless loop: key hidden, loop stopped. You can try all three at our table."
+**Slide 7: Measured, not claimed** *(30 s)*. Two numbers, together: left card, then right card.
+On the slide: **97.5%** of real data-stealing attacks caught by the AI judge (tested on 519 real attacks that stole data,
+Microsoft LLMail-Inject) **+** **0%** of harmless prompts flagged at the same setting (0 of 993 real bank customer questions,
+banking77). Below: **4/4 → 0/4** client-data leaks, even when the judge misses · **450+** tests · **<0.02 ms** per check.
+> "We measured the AI judge on real attacks. Of 519 real attacks that actually stole data, it caught 97.5%.
+> And at the same setting it flagged none of 993 real bank customer questions. Both numbers matter: a judge that flags
+> everything catches everything.
+> And when the judge does miss, the flow rule still holds: four leaks out of four without Flow Guard, zero with it." *(cut first: the last sentence)*
 
-**Slide 8: Measured, not claimed** *(25 s)*. Big number first.
-On the slide: a two-bar chart "Client data leaked, worst-case model": **without Flow Guard 4/4 · with Flow Guard 0/4**,
-note "even when the detector misses". Beside it three tiles: **≥95%** real data-stealing attacks caught (9,716 real cases) ·
-**365 tests** offline, every push · **< 0.02 ms** per detector check.
-> "We measured it against a model that obeys every hidden instruction. Without Flow Guard: four leaks out of four.
-> With it: zero, **even when the injection detector misses everything.**
-> On almost ten thousand real cases, the detector still catches over 95% of the attacks that really stole data. *(cut first)*
-> 365 tests run offline on every push."
-
-**Slide 9: Every decision on the record** *(15 s)*
-On the slide: a screenshot of the dashboard Audit page with three callouts: *who · agent · purpose*, *policy version*,
-*hash chain verified*. Small row underneath: FINRA 3110 · SEC 17a-4 · EU AI Act Art. 12 · DORA.
+**Slide 8: Every decision on the record** *(15 s)*
+On the slide: an audit entry (real field names: user, agent, purpose, policy version, decisions, hash chain) with three
+callouts: *who · agent · why*, *which policy decided*, *tamper-evident*. Small row: FINRA 3110 · SEC 17a-4 · EU AI Act Art. 12 · DORA.
 > "Every decision is a hash-chained audit entry: who, which agent, why, and which policy version decided.
 > Compliance gets evidence, not a promise."
 
-**Slide 10: Monday, 09:04, again** *(20 s)*. Same Olivia, different ending. Slowly.
-On the slide: the strip from slide 2, each panel now stopped (green check or red stop). Big line: "Don't trust the agent.
-Trust the flow." Small: "The policy file is open."
+**Slide 9: Monday, 09:04, again** *(20 s)*. Same Olivia, different ending. Slowly.
+On the slide: four outcome cards (green check or red stop). Big line: "Don't trust the agent. Trust the flow."
+Small: "The policy file is open. Try to break it."
 > "Monday, 9:04, again. The passport reached the sanctions check, nowhere else. The hidden sentence was quarantined.
 > The deal stayed behind the wall.
 > **Don't trust the agent. Trust the flow.** The policy file is open. Try to break it."
 
-**Stop talking.** Leave slide 10 up. Limits are not in the 3 minutes: they're the first Q&A answers below
-(bypassing the proxy; MCP gateway and four-eyes approval next), and we say them plainly when asked.
+**Stop talking.** When the questions start, advance to **slide 10: Limits today and what comes next** and leave it up.
+Limits are not in the 3 minutes; we say them plainly when asked: tools run in the agent, so an allowed call is a
+permission, not proof it ran; calls that bypass the gateway are not seen; the reporting API and policy edits are
+localhost only; the token vault and session state reset on restart (the audit log persists). Next: four-eyes approvals
+bound to the exact arguments, leak fingerprints, more adapters and signed requests.
 
 ---
 
 ## At the table: live demo (judging time)
 
 Layout: terminal left, dashboard `/audit` right. Run the acts in this order; if time is short, do Act 1 and Act 4 only.
-Each act shows one of the three questions on slide 6: Act 1 *what* (tokens, quarantine, flow rule) and *who* (scope),
-Act 2 *what* (information barrier), Act 3 *how much* (budget) on the real Claude Code, Act 4 the live policy.
+Each act shows the checkpoints on slide 6 at work: Act 1 checkpoints 1 and 3 (tokens, quarantine, flow rule) and the
+scope check, Act 2 the information barrier, Act 3 budgets on the real Claude Code, Act 4 the live policy.
 
 ### Act 1 · Olivia and the poisoned document
 
@@ -229,7 +229,7 @@ Technique for every answer: **acknowledge → reframe to the flow → evidence �
 | "Prompt-injection detectors exist. Why not just use one?" | "We do use one, as one layer of several. But EchoLeak walked past one. Our bet doesn't depend on catching the attack: if it gets through, the data still can't leave." |
 | "What's the latency?" | "The detectors measured under 0.02 ms per text. The AI judge is the slow part, so it only runs on new untrusted content, it's cached, and it's reported per control in `/api/metrics`. Next step: a local classifier in front of it." |
 | "What about false positives blocking real work?" | "Quarantine removes only the suspicious field, not the whole request; you saw Olivia's file still got prepared. Profiles go from strict to permissive per team, and every block has a reason in the log." |
-| "How does it scale to thousands of agents?" | "Each key is one user and one agent, with its own budget. The engine is stateless per decision apart from the session's token vault, so it scales horizontally. Budgets are what stop a thousand-agent bill." |
+| "How does it scale to thousands of agents?" | "Each key is one user and one agent, with its own budget. Today one gateway holds session state (token vault, budgets) in memory, so you run one per team or keep a session on the same instance. Next is a shared store for the vault and budgets, so instances scale out behind a load balancer. Budgets are what stop a thousand-agent bill." |
 | "Who approves the high-risk actions?" | "Today a policy can block with a reason. Next is four-eyes approval bound to a hash of the exact arguments, so nothing can change after someone approves it." |
 | "Why should Goldman build on this instead of a vendor?" | "It's one YAML file your risk team can read, it sits in front of any model vendor, which is what DORA concentration risk asks for, and every outside destination, the AI judge included, gets only the data class its vendor is approved for. Today our judge is an outside service approved like the model vendor; next is an on-premise judge, so client files need no outside checker at all." |
 | "What doesn't it do yet?" | "Three things. An agent that bypasses the gateway is invisible. Client names aren't detected yet. And our AI judge is an outside service; the open on-premise model we measured isn't good enough yet. Next, on the same decision function: the MCP gateway at the tool boundary, and four-eyes approval bound to a hash of the exact arguments." |
