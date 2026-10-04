@@ -24,6 +24,18 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # The security team's signature feed (`just feed`): serves feeds/signatures.json on 127.0.0.1:8100 inside the
+  # gateway's network, so the policy's feed_url works unchanged. Edit feeds/signatures.json and press "Pull feed now".
+  feed:
+    image: python:3.13-slim
+    network_mode: service:gateway
+    command: python -m http.server 8100 --bind 127.0.0.1 --directory /feeds
+    volumes:
+      - ./feeds:/feeds:ro
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
   dashboard:
     # Keep the gateway's localhost-only /api/try demo protected: the dashboard
     # reaches it over loopback rather than weakening the API's local-client check.
