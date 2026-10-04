@@ -692,6 +692,17 @@ class Engine:
                 "tokens_issued": len(s.vault) if s else None,
                 "steps": steps}
 
+    @staticmethod
+    def _budget_view(p: Policy, s: Session) -> dict[str, Any]:
+        """The session's own limits (default + its role's override, the same ones enforcement uses) and the one it is
+        closest to, so the dashboard never recomputes budgets against the wrong limit."""
+        limits = p.budget_for(s.user)
+        used = {"max_tokens": s.tokens, "max_cost_usd": s.cost_usd, "max_tool_calls": s.tool_calls, "max_compute_seconds": s.compute_s}
+        shares = {k: used[k] / v for k, v in limits.items() if k in used and v}
+        k = max(shares, key=lambda key: shares[key]) if shares else None
+        nearest = {"limit_name": k, "used": round(used[k], 6), "limit": limits[k], "share": round(shares[k], 4)} if k else None
+        return {"limits": limits, "nearest": nearest}
+
     def metrics(self) -> dict[str, Any]:
         ev = self.exchanges()
         by_outcome: dict[str, int] = {}
@@ -726,6 +737,7 @@ class Engine:
                 "per_control_avg": {k: round(sum(v) / len(v), 1) for k, v in per_control_ms.items()},
             },
             "cost_usd": round(sum(s.cost_usd for s in self.sessions.values()), 6),
-            "sessions": {sid: {"user": s.user, **s.usage()} for sid, s in self.sessions.items()},
+            "sessions": {sid: {"user": s.user, "agent": s.agent, **s.usage(), **self._budget_view(p, s)}
+                         for sid, s in self.sessions.items()},
             "budget": p.session_budget,
         }

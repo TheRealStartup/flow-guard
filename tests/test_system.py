@@ -541,3 +541,14 @@ def test_dashboard_adds_and_removes_an_approved_model_keeping_the_comments(gw):
     assert gw.policy_path.read_text() == before
     assert gw.client.delete("/api/policy/models/qwen3:4b").status_code == 200  # a name with a colon
     assert "qwen3:4b" not in gw.client.get("/api/policy/details").json()["models"]
+
+
+def test_metrics_report_each_session_against_its_own_role_budget(gw):
+    """The dashboard shows what enforcement uses: a developer's session against the developer budget, not the default."""
+    gw.upstream.next_reply = {"text": "ok"}
+    gw.chat("devon", [{"role": "user", "content": "hi"}], session="dev-b")
+    gw.chat("alice", [{"role": "user", "content": "hi"}], session="sup-b")
+    s = gw.client.get("/api/metrics").json()["sessions"]
+    pol = gw.app.state.engine.policies.get()
+    assert s["dev-b"]["limits"] == pol.budget_for("devon") != pol.budget_for("alice") == s["sup-b"]["limits"]
+    assert s["dev-b"]["agent"] == "coding-assistant" and s["dev-b"]["nearest"]["limit_name"] in s["dev-b"]["limits"]

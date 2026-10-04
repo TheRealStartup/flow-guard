@@ -8,6 +8,8 @@ import { CONTROLS, OWASP, OWASP_LLM, utcTime } from "@/lib/format";
 import { Panel, PanelHeader } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
+type Budget = { max_tokens?: number; max_cost_usd?: number; max_tool_calls?: number; max_compute_seconds?: number };
+
 type Details = {
   version: string;
   profile: string;
@@ -23,7 +25,7 @@ type Details = {
   budgets: { session?: { max_tokens?: number; max_cost_usd?: number; max_tool_calls?: number; max_compute_seconds?: number } };
   identity: { mode: string; require_purpose: boolean; keys: { user: string; agent: string }[] };
   users: Record<string, { role: string; side?: string; assigned_clients?: string[]; deals?: number }>; // deals: a count, ids are codenames
-  roles: Record<string, { tools: string[] }>;
+  roles: Record<string, { tools: string[]; budget?: Budget }>;
   sinks: { external?: string[]; detokenize?: string[] };
   scopes: Record<string, { argument: string; user_field: string }>;
   barriers: { public_message: string; restricted: { terms: number }[] };
@@ -363,26 +365,37 @@ function Models({ d, onChanged }: { d: Details; onChanged: () => void }) {
   );
 }
 
+const fmtBudget = (b: Budget) =>
+  [
+    b.max_cost_usd != null && `$${b.max_cost_usd}`,
+    b.max_tokens != null && `${(b.max_tokens / 1000).toLocaleString("en-US")}k tokens`,
+    b.max_tool_calls != null && `${b.max_tool_calls} tool calls`,
+    b.max_compute_seconds != null && `${b.max_compute_seconds} s compute`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
 function Budgets({ d }: { d: Details }) {
-  const b = d.budgets.session ?? {};
-  const rows: [string, string][] = [
-    ["Tokens", (b.max_tokens ?? 0).toLocaleString("en-US")],
-    ["Cost", `$${b.max_cost_usd}`],
-    ["Tool calls", String(b.max_tool_calls)],
-    ["Compute", `${b.max_compute_seconds} s`],
-  ];
+  const base = d.budgets.session ?? {};
+  const overrides = Object.entries(d.roles).filter(([, r]) => r.budget);
   return (
     <Panel>
-      <PanelHeader title="Session budget" />
-      <dl className="grid grid-cols-2 gap-y-2 px-6 py-4 text-[15px]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className="text-right font-mono">{v}</dd>
+      <PanelHeader title="Session budgets" />
+      <dl className="flex flex-col gap-2 px-6 py-4 text-[15px]">
+        <div className="flex gap-3">
+          <dt className="text-muted-foreground">Every role</dt>
+          <dd className="ml-auto text-right font-mono text-sm">{fmtBudget(base)}</dd>
+        </div>
+        {overrides.map(([role, r]) => (
+          <div key={role} className="flex gap-3">
+            <dt className="text-muted-foreground">{role}</dt>
+            <dd className="ml-auto text-right font-mono text-sm">{fmtBudget({ ...base, ...r.budget })}</dd>
           </div>
         ))}
       </dl>
-      <p className="border-t px-6 py-3 text-sm text-muted-foreground">Whichever limit is hit first stops the session (action: {d.controls.budget?.action}).</p>
+      <p className="border-t px-6 py-3 text-sm text-muted-foreground">
+        Per role, never per person. Whichever limit is hit first stops the session (action: {d.controls.budget?.action}).
+      </p>
     </Panel>
   );
 }

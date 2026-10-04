@@ -12,7 +12,20 @@ import { PageHeader, Panel, PanelHeader, Pill, SectionLabel } from "@/components
 import { cn } from "@/lib/utils";
 
 type Metrics = {
-  sessions: Record<string, { user: string; tokens: number; cost_usd: number; tool_calls: number; compute_s: number; labels: string[] }>;
+  sessions: Record<
+    string,
+    {
+      user: string;
+      agent: string;
+      tokens: number;
+      cost_usd: number;
+      tool_calls: number;
+      compute_s: number;
+      labels: string[];
+      // Computed by the gateway with the same limits it enforces (default + the role's override).
+      nearest: { limit_name: string; used: number; limit: number; share: number } | null;
+    }
+  >;
   budget: { max_tokens: number; max_cost_usd: number; max_tool_calls: number; max_compute_seconds: number };
 };
 
@@ -356,21 +369,19 @@ function Actors({ o }: { o: Overview }) {
   );
 }
 
+const LIMIT: Record<string, { label: string; fmt: (v: number) => string }> = {
+  max_tokens: { label: "Tokens", fmt: (v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)) },
+  max_cost_usd: { label: "Cost", fmt: (v) => `$${v.toFixed(2)}` },
+  max_tool_calls: { label: "Tool calls", fmt: (v) => String(v) },
+  max_compute_seconds: { label: "Compute", fmt: (v) => `${Math.round(v)} s` },
+};
+
 function Budgets({ metrics }: { metrics: Metrics | null }) {
-  const b = metrics?.budget;
-  const rows = metrics && b
+  const rows = metrics
     ? Object.entries(metrics.sessions)
-        .map(([id, s]) => {
-          const parts = [
-            { k: "Tool calls", v: s.tool_calls, max: b.max_tool_calls },
-            { k: "Tokens", v: s.tokens, max: b.max_tokens },
-            { k: "Cost", v: s.cost_usd, max: b.max_cost_usd },
-            { k: "Compute", v: s.compute_s, max: b.max_compute_seconds },
-          ];
-          const top = parts.reduce((x, y) => (y.v / y.max > x.v / x.max ? y : x));
-          return { id, user: s.user, top };
-        })
-        .sort((x, y) => y.top.v / y.top.max - x.top.v / x.top.max)
+        .filter(([, s]) => s.nearest)
+        .map(([id, s]) => ({ id, user: s.user, agent: s.agent, n: s.nearest! }))
+        .sort((x, y) => y.n.share - x.n.share)
         .slice(0, 6)
     : [];
   return (
@@ -378,7 +389,7 @@ function Budgets({ metrics }: { metrics: Metrics | null }) {
       <PanelHeader title="Session budgets" count={metrics ? Object.keys(metrics.sessions).length : "…"} />
       <div className="px-6 pt-4 pb-5">
         <p className="mb-4 text-sm text-muted-foreground">
-          Live sessions since the gateway started, closest to their limit first. A session is stopped at 100%.
+          Live sessions since the gateway started, closest to a limit first. Each session has the budget of its role; it is stopped at 100%.
         </p>
         <div className="flex flex-col gap-4">
           {rows.map((r) => (
@@ -387,11 +398,15 @@ function Budgets({ metrics }: { metrics: Metrics | null }) {
                 <Link href={`/audit?q=${encodeURIComponent(r.id)}`} className="truncate font-mono hover:underline">
                   {r.id}
                 </Link>
+                <span className="shrink-0 text-muted-foreground">
+                  {r.user} · {r.agent}
+                </span>
                 <span className="ml-auto shrink-0 text-muted-foreground">
-                  {r.top.k} {r.top.v}/{r.top.max}
+                  {LIMIT[r.n.limit_name]?.label ?? r.n.limit_name} {LIMIT[r.n.limit_name]?.fmt(r.n.used) ?? r.n.used} of{" "}
+                  {LIMIT[r.n.limit_name]?.fmt(r.n.limit) ?? r.n.limit} ({Math.round(r.n.share * 100)}%)
                 </span>
               </div>
-              <Meter value={r.top.v} max={r.top.max} label={`${r.id} ${r.top.k}`} />
+              <Meter value={Math.min(r.n.used, r.n.limit)} max={r.n.limit} label={`${r.id} ${r.n.limit_name}`} />
             </div>
           ))}
           {metrics && !rows.length && <Empty text="No live sessions." />}
