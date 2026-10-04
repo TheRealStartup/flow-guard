@@ -71,3 +71,15 @@ demo-data model="mock/compromised":
 # classifier benchmarks (no network unless stated): reports in bench/results/
 bench-pii:
     cd gateway && uv run python ../bench/pii_bench.py
+
+# prompt-injection judges on public datasets + benign bank data (calls Jev; answers cached in bench/cache/)
+bench-injection:
+    cd gateway && set -a && . ./.env && set +a && uv run --with pyarrow python ../bench/injection_bench.py
+
+# end to end: does data leave with no gateway, detection only, full gateway? (no network)
+bench-e2e:
+    cd gateway && uv run python ../bench/e2e_bench.py
+
+# download the public benchmark datasets into bench/quarantine/ (needs network)
+bench-fetch:
+    cd gateway && uv run python ../bench/fetch.py

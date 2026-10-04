@@ -9,3 +9,5 @@ result
 .direnv/
 gateway/data/
 demo/outbox.jsonl
+bench/quarantine/
+bench/cache/
