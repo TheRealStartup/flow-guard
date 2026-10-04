@@ -1,0 +1,312 @@
+{
+  "suite": "pii-and-secrets",
+  "detector": "gateway/acl/detectors/patterns.py",
+  "data": "synthetic, generated (seed 20261004)",
+  "cases": 1200,
+  "positives": 300,
+  "negatives": 900,
+  "per_kind": {
+    "CARD": {
+      "tp": 60,
+      "fn": 0,
+      "fp": 62,
+      "precision": 0.4918032786885246,
+      "recall": 1.0,
+      "f1": 0.6593406593406593
+    },
+    "IBAN": {
+      "tp": 60,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "PASSPORT": {
+      "tp": 30,
+      "fn": 30,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
+    },
+    "PESEL": {
+      "tp": 40,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "SECRET": {
+      "tp": 60,
+      "fn": 20,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    }
+  },
+  "per_category": {
+    "card": {
+      "n": 60,
+      "hit": 60,
+      "rate": 1.0
+    },
+    "iban": {
+      "n": 60,
+      "hit": 60,
+      "rate": 1.0
+    },
+    "pesel": {
+      "n": 40,
+      "hit": 40,
+      "rate": 1.0
+    },
+    "passport (labelled)": {
+      "n": 40,
+      "hit": 30,
+      "rate": 0.75
+    },
+    "passport (unlabelled)": {
+      "n": 20,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "secret (aws)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (openai)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (github)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (stripe)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (url-creds)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (env-assign)": {
+      "n": 10,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "secret (json-assign)": {
+      "n": 10,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "secret (private-key)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "order number 16 digits": {
+      "n": 100,
+      "hit": 9,
+      "rate": 0.09
+    },
+    "invalid card checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "invalid IBAN checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "11-digit number, bad PESEL checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "phone number": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "unix timestamp ms": {
+      "n": 60,
+      "hit": 9,
+      "rate": 0.15
+    },
+    "uuid": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "git sha": {
+      "n": 60,
+      "hit": 1,
+      "rate": 0.016666666666666666
+    },
+    "isbn-13": {
+      "n": 60,
+      "hit": 3,
+      "rate": 0.05
+    },
+    "imei": {
+      "n": 40,
+      "hit": 40,
+      "rate": 1.0
+    },
+    "amount and date": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "config token counts": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "config placeholders": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "iso country + digits": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "word passport, no number": {
+      "n": 40,
+      "hit": 0,
+      "rate": 0.0
+    }
+  },
+  "latency_ms": {
+    "p50": 0.009497998689766973,
+    "p95": 0.016350997611880302
+  },
+  "missed_case_ids": [
+    "passport-labelled-1",
+    "passport-labelled-5",
+    "passport-labelled-9",
+    "passport-labelled-13",
+    "passport-labelled-17",
+    "passport-labelled-21",
+    "passport-labelled-25",
+    "passport-labelled-29",
+    "passport-labelled-33",
+    "passport-labelled-37",
+    "passport-unlabelled-0",
+    "passport-unlabelled-1",
+    "passport-unlabelled-2",
+    "passport-unlabelled-3",
+    "passport-unlabelled-4",
+    "passport-unlabelled-5",
+    "passport-unlabelled-6",
+    "passport-unlabelled-7",
+    "passport-unlabelled-8",
+    "passport-unlabelled-9",
+    "passport-unlabelled-10",
+    "passport-unlabelled-11",
+    "passport-unlabelled-12",
+    "passport-unlabelled-13",
+    "passport-unlabelled-14",
+    "passport-unlabelled-15",
+    "passport-unlabelled-16",
+    "passport-unlabelled-17",
+    "passport-unlabelled-18",
+    "passport-unlabelled-19",
+    "secret-env-assign-5",
+    "secret-json-assign-6",
+    "secret-env-assign-13",
+    "secret-json-assign-14",
+    "secret-env-assign-21",
+    "secret-json-assign-22",
+    "secret-env-assign-29",
+    "secret-json-assign-30",
+    "secret-env-assign-37",
+    "secret-json-assign-38",
+    "secret-env-assign-45",
+    "secret-json-assign-46",
+    "secret-env-assign-53",
+    "secret-json-assign-54",
+    "secret-env-assign-61",
+    "secret-json-assign-62",
+    "secret-env-assign-69",
+    "secret-json-assign-70",
+    "secret-env-assign-77",
+    "secret-json-assign-78"
+  ],
+  "false_alarm_case_ids": [
+    "neg-order-number-16-digits-10",
+    "neg-order-number-16-digits-15",
+    "neg-order-number-16-digits-18",
+    "neg-order-number-16-digits-20",
+    "neg-order-number-16-digits-31",
+    "neg-order-number-16-digits-55",
+    "neg-order-number-16-digits-66",
+    "neg-order-number-16-digits-78",
+    "neg-order-number-16-digits-94",
+    "neg-unix-timestamp-ms-3",
+    "neg-unix-timestamp-ms-12",
+    "neg-unix-timestamp-ms-26",
+    "neg-unix-timestamp-ms-28",
+    "neg-unix-timestamp-ms-37",
+    "neg-unix-timestamp-ms-41",
+    "neg-unix-timestamp-ms-45",
+    "neg-unix-timestamp-ms-53",
+    "neg-unix-timestamp-ms-54",
+    "neg-git-sha-44",
+    "neg-isbn-13-15",
+    "neg-isbn-13-27",
+    "neg-isbn-13-41",
+    "neg-imei-0",
+    "neg-imei-1",
+    "neg-imei-2",
+    "neg-imei-3",
+    "neg-imei-4",
+    "neg-imei-5",
+    "neg-imei-6",
+    "neg-imei-7",
+    "neg-imei-8",
+    "neg-imei-9",
+    "neg-imei-10",
+    "neg-imei-11",
+    "neg-imei-12",
+    "neg-imei-13",
+    "neg-imei-14",
+    "neg-imei-15",
+    "neg-imei-16",
+    "neg-imei-17",
+    "neg-imei-18",
+    "neg-imei-19",
+    "neg-imei-20",
+    "neg-imei-21",
+    "neg-imei-22",
+    "neg-imei-23",
+    "neg-imei-24",
+    "neg-imei-25",
+    "neg-imei-26",
+    "neg-imei-27",
+    "neg-imei-28",
+    "neg-imei-29",
+    "neg-imei-30",
+    "neg-imei-31",
+    "neg-imei-32",
+    "neg-imei-33",
+    "neg-imei-34",
+    "neg-imei-35",
+    "neg-imei-36",
+    "neg-imei-37",
+    "neg-imei-38",
+    "neg-imei-39"
+  ]
+}

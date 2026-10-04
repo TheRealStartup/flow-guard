@@ -67,3 +67,7 @@ new-key user agent:
 # fill the audit log with one run of every scenario (needs the gateway running): dashboard data
 demo-data model="mock/compromised":
     cd gateway && uv run python ../demo/seed.py --model {{model}}
+
+# classifier benchmarks (no network unless stated): reports in bench/results/
+bench-pii:
+    cd gateway && uv run python ../bench/pii_bench.py
