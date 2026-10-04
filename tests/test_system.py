@@ -307,7 +307,7 @@ def test_policy_change_is_diffed_and_audited(gw):
     gw.edit_policy(lambda p: p["controls"]["injection.jev"].update(threshold=0.5))
     gw.client.get("/api/health")
     h = gw.client.get("/api/policy/history").json()
-    assert {"what": "controls.injection.jev.threshold", "old": 0.8, "new": 0.5} in h[0]["changes"]
+    assert {"what": "controls.injection.jev.threshold", "old": 0.4, "new": 0.5} in h[0]["changes"]
     assert h[0]["previous"] == h[1]["version"]
     audited = gw.client.get("/api/events?type=policy_change").json()
     assert audited[0]["changes"] == h[0]["changes"]
@@ -324,7 +324,7 @@ def test_policy_details_for_the_policy_page(gw):
     assert d["users"]["marcus"]["deals"] == 1
     assert d["barriers"]["restricted"][0]["terms"] > 0
     gw.edit_policy(lambda p: p.update(active_profile="strict"))
-    assert gw.client.get("/api/policy/details").json()["controls"]["injection.jev"]["threshold"] == 0.5
+    assert gw.client.get("/api/policy/details").json()["controls"]["injection.jev"]["threshold"] == 0.25
 
 
 def test_dashboard_action_toggle_edits_only_that_value(gw):

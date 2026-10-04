@@ -69,3 +69,23 @@ new-key user agent:
 # fill the audit log with one run of every scenario (needs the gateway running): dashboard data
 demo-data model="mock/compromised":
     cd gateway && uv run python ../demo/seed.py --model {{model}}
+
+# classifier benchmarks (no network unless stated): reports in bench/results/
+bench-pii:
+    cd gateway && uv run python ../bench/pii_bench.py
+
+# prompt-injection judges on public datasets + benign bank data (calls Jev; answers cached in bench/cache/)
+bench-injection:
+    cd gateway && set -a && . ./.env && set +a && uv run --with pyarrow python ../bench/injection_bench.py
+
+# the same benchmark with the on-premise judge PIGuard (CPU; weights in bench/models/piguard/, see bench/piguard_judge.py)
+bench-piguard:
+    cd gateway && set -a && . ./.env && set +a && uv run --with torch --with transformers --with pyarrow --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match python ../bench/injection_bench.py --judges demo,jev,piguard
+
+# end to end: does data leave with no gateway, detection only, full gateway? (no network)
+bench-e2e:
+    cd gateway && uv run python ../bench/e2e_bench.py
+
+# download the public benchmark datasets into bench/quarantine/ (needs network)
+bench-fetch:
+    cd gateway && uv run python ../bench/fetch.py

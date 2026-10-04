@@ -122,7 +122,7 @@ the fields it names. Switching is one line and shows up in the audit trail as a 
 | secrets | block | redact | redact |
 | IBAN, PESEL | redact | redact | flag only |
 | data flow | any external call once the session saw sensitive data | calls carrying sensitive data | calls carrying sensitive data |
-| injection threshold / action | 0.50 / block | 0.80 / redact | 0.95 / flag, fails open |
+| injection threshold / action | 0.25 / block | 0.40 / redact | 0.60 / flag, fails open |
 | fake spotlight markers | block | flag | flag |
 
 Data-flow control stays `block` in every profile: it is the backstop when detection misses.

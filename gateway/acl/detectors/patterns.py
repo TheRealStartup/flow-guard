@@ -41,8 +41,24 @@ def pesel_ok(p: str) -> bool:
 CARD_RE = re.compile(r"(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])")
 IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b")
 PESEL_RE = re.compile(r"(?<!\d)\d{11}(?!\d)")
-# Passport numbers have no common checksum, so we only take them where the text says so ("passport": "C01X00T47").
-PASSPORT_RE = re.compile(r"passport(?:[ _-]?(?:no|number|nr))?[\"']?\s*[:=]?\s*[\"']?((?=[A-Z0-9]*\d)[A-Z0-9]{6,9})\b", re.IGNORECASE)
+# Card networks by leading digits and allowed lengths. Luhn alone passes any 13-19 digit number one time in ten
+# (order ids, millisecond timestamps, IMEIs, ISBNs); a real card also starts with its network's prefix.
+CARD_NETWORKS = (
+    (re.compile(r"4"), (13, 16, 19)),  # Visa
+    (re.compile(r"5[1-5]|2(?:2[2-9][1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720)"), (16,)),  # Mastercard (51-55, 2221-2720)
+    (re.compile(r"3[47]"), (15,)),  # American Express
+    (re.compile(r"6(?:011|4[4-9]|5)"), (16, 17, 18, 19)),  # Discover
+    (re.compile(r"35(?:2[89]|[3-8]\d)"), (16, 17, 18, 19)),  # JCB (3528-3589)
+    (re.compile(r"3(?:0[0-5]|[689])"), (14, 15, 16)),  # Diners Club
+    (re.compile(r"62"), (16, 17, 18, 19)),  # UnionPay
+)
+
+
+def card_network_ok(digits: str) -> bool:
+    return any(rx.match(digits) and len(digits) in lengths for rx, lengths in CARD_NETWORKS)
+# Passport numbers have no common checksum, so we only take them where the text says so ("passport": "C01X00T47",
+# "Passport No. AB1234567", "passport #533380006").
+PASSPORT_RE = re.compile(r"passport(?:[ _-]?(?:no\.?|number|nr\.?|#))?[\"']?\s*[:=#]?\s*[\"']?((?=[A-Z0-9]*\d)[A-Z0-9]{6,9})\b", re.IGNORECASE)
 # Dates of birth: a date alone is not personal data, so again only where the text labels it ("date_of_birth": "1979-03-14").
 DOB_RE = re.compile(r"(?:date[ _-]?of[ _-]?birth|\bdob|\bborn)[\"']?\s*[:=]?\s*(?:on\s+)?[\"']?(\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4})\b", re.IGNORECASE)
 SECRET_RES = [
@@ -90,7 +106,7 @@ def find_sensitive(text: str) -> list[Span]:
     spans: list[Span] = []
     for m in CARD_RE.finditer(text):
         digits = re.sub(r"\D", "", m.group())
-        if 13 <= len(digits) <= 19 and luhn_ok(digits):
+        if 13 <= len(digits) <= 19 and card_network_ok(digits) and luhn_ok(digits):
             spans.append(Span(m.start(), m.end(), "CARD", digits, "pii.card"))
     for m in IBAN_RE.finditer(text):
         compact = m.group().replace(" ", "")
@@ -108,9 +124,15 @@ def find_sensitive(text: str) -> list[Span]:
             spans.append(Span(m.start(), m.end(), "SECRET", m.group(), "secrets"))
     for m in URL_CREDS_RE.finditer(text):
         spans.append(Span(m.start(1), m.end(1), "SECRET", m.group(1), "secrets"))
-    for m in ASSIGN_RE.finditer(text):
+    # Search again from inside each non-secret match: in "Config: DB_PASSWORD=x" the first match is "Config" with the
+    # value "DB_PASSWORD=x", which would otherwise swallow the real assignment.
+    pos = 0
+    while m := ASSIGN_RE.search(text, pos):
         if _secret_key(m.group(1)) and _secret_like(m.group(2)):
             spans.append(Span(m.start(2), m.end(2), "SECRET", m.group(2), "secrets", certain=False))
+            pos = m.end()
+        else:
+            pos = m.start(2) if m.start(2) > m.start() else m.end()
     # Drop spans that overlap an earlier, longer one (e.g. digits of an IBAN read as a PESEL).
     spans.sort(key=lambda s: (s.start, -(s.end - s.start)))
     out: list[Span] = []

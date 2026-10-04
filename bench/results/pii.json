@@ -1,0 +1,222 @@
+{
+  "suite": "pii-and-secrets",
+  "detector": "gateway/acl/detectors/patterns.py",
+  "data": "synthetic, generated (seed 20261004)",
+  "cases": 1200,
+  "positives": 300,
+  "negatives": 900,
+  "per_kind": {
+    "CARD": {
+      "tp": 60,
+      "fn": 0,
+      "fp": 2,
+      "precision": 0.967741935483871,
+      "recall": 1.0,
+      "f1": 0.9836065573770492
+    },
+    "IBAN": {
+      "tp": 60,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "PASSPORT": {
+      "tp": 40,
+      "fn": 20,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    "PESEL": {
+      "tp": 40,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "SECRET": {
+      "tp": 80,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "per_category": {
+    "card": {
+      "n": 60,
+      "hit": 60,
+      "rate": 1.0
+    },
+    "iban": {
+      "n": 60,
+      "hit": 60,
+      "rate": 1.0
+    },
+    "pesel": {
+      "n": 40,
+      "hit": 40,
+      "rate": 1.0
+    },
+    "passport (labelled)": {
+      "n": 40,
+      "hit": 40,
+      "rate": 1.0
+    },
+    "passport (unlabelled)": {
+      "n": 20,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "secret (aws)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (openai)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (github)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (stripe)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (url-creds)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (env-assign)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (json-assign)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "secret (private-key)": {
+      "n": 10,
+      "hit": 10,
+      "rate": 1.0
+    },
+    "order number 16 digits": {
+      "n": 100,
+      "hit": 2,
+      "rate": 0.02
+    },
+    "invalid card checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "invalid IBAN checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "11-digit number, bad PESEL checksum": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "phone number": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "unix timestamp ms": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "uuid": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "git sha": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "isbn-13": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "imei": {
+      "n": 40,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "amount and date": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "config token counts": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "config placeholders": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "iso country + digits": {
+      "n": 60,
+      "hit": 0,
+      "rate": 0.0
+    },
+    "word passport, no number": {
+      "n": 40,
+      "hit": 0,
+      "rate": 0.0
+    }
+  },
+  "latency_ms": {
+    "p50": 0.008957002137321979,
+    "p95": 0.017402999219484627
+  },
+  "missed_case_ids": [
+    "passport-unlabelled-0",
+    "passport-unlabelled-1",
+    "passport-unlabelled-2",
+    "passport-unlabelled-3",
+    "passport-unlabelled-4",
+    "passport-unlabelled-5",
+    "passport-unlabelled-6",
+    "passport-unlabelled-7",
+    "passport-unlabelled-8",
+    "passport-unlabelled-9",
+    "passport-unlabelled-10",
+    "passport-unlabelled-11",
+    "passport-unlabelled-12",
+    "passport-unlabelled-13",
+    "passport-unlabelled-14",
+    "passport-unlabelled-15",
+    "passport-unlabelled-16",
+    "passport-unlabelled-17",
+    "passport-unlabelled-18",
+    "passport-unlabelled-19"
+  ],
+  "false_alarm_case_ids": [
+    "neg-order-number-16-digits-20",
+    "neg-order-number-16-digits-55"
+  ]
+}

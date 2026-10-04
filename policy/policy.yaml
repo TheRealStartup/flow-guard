@@ -38,7 +38,10 @@ controls:
     mode: value       # value: block only if the call carries sensitive data | session: block any external call once the session holds sensitive data
   injection.jev:
     action: redact    # redact = quarantine the suspicious message; block = stop the whole request
-    threshold: 0.80   # Jev's probability that the text tries to instruct the agent
+    threshold: 0.40   # Jev's probability that the text tries to instruct the agent. Calibrated on real data
+                      # (docs/benchmarks.md): 0.40 catches ~98% of LLMail-Inject attacks that exfiltrated data
+                      # (72.8% at the old 0.80), at 0.5% false alarms on real emails; a false alarm costs one
+                      # quarantined field, not a blocked request
     timeout_s: 8       # Jev answers in 0.6–0.8 s (measured Sat night; 2–4.5 s earlier that day)
     on_error: block
     max_class: P2        # Jev (api.typesafe.ai) is an outside processor like the model vendor, approved to the same
@@ -96,12 +99,12 @@ profiles:
     spotlight: {action: block}
     secrets: {action: block}
     flow.sensitive_to_external: {mode: session}
-    injection.jev: {threshold: 0.50, action: block}
+    injection.jev: {threshold: 0.25, action: block}
   balanced: {}
   permissive:
     pii.iban: {action: flag}
     pii.pesel: {action: flag}
-    injection.jev: {threshold: 0.95, action: flag, on_error: allow}
+    injection.jev: {threshold: 0.60, action: flag, on_error: allow}
 
 # Allowed models and where they run. Prices are USD per million tokens, used only if
 # the provider does not report the cost itself. Local models cost $0 but use compute time.
