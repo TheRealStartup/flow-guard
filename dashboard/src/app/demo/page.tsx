@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, History, Info, ListTree, Lock, Play, RotateCcw, ShieldCheck, User, X } from "lucide-react";
-import { getJSON, type Policy, type PolicyHistoryItem, type TryResult } from "@/lib/api";
+import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, Info, ListTree, Play, RotateCcw, ShieldCheck, User, X } from "lucide-react";
+import { getJSON, type Policy, type TryResult } from "@/lib/api";
 import { usePolicyLive } from "@/lib/stream";
-import { CONTROLS, controlName, utcTime } from "@/lib/format";
+import { CONTROLS, controlName } from "@/lib/format";
 import { ActionPill, Btn, Field, PageHeader, Panel, PanelHeader, Pill, SectionLabel, Select, Stat, StatRow, TEXT } from "@/components/kit";
 import { cn } from "@/lib/utils";
 import { analyse, type Analysis } from "./analyse";
@@ -21,7 +21,7 @@ export default function DemoPage() {
   const [result, setResult] = useState<{ run: TryResult; a: Analysis; ms: number } | null>(null);
 
   // Refreshed when a policy change streams in; polls every 3 s only while the stream is down.
-  const { policy, history } = usePolicyLive();
+  const { policy } = usePolicyLive();
 
   const pick = (id: string) => {
     const ex = EXAMPLES.find((e) => e.id === id);
@@ -79,62 +79,57 @@ export default function DemoPage() {
 
       <FlowStrip a={a ?? null} />
 
-      <Panel className="mb-6 px-6 pt-5 pb-4">
-        <div className="grid grid-cols-1 items-end gap-4 lg:grid-cols-[1.6fr_1fr_1.2fr_auto]">
-          <Field label="Example">
-            <Select value={example} onChange={pick} options={[...EXAMPLES.map((e) => ({ value: e.id, label: e.label })), { value: "custom", label: "Custom prompt" }]} />
-          </Field>
-          <Field label="Acting as">
-            <Select value={user} onChange={(v) => { setUser(v); setExample("custom"); }} options={Object.keys(USERS).map((u) => ({ value: u, label: `${u} · ${USERS[u].scenario}` }))} />
-          </Field>
-          <Field label="Model">
-            <Select value={model} onChange={setModel} options={MODELS} />
-          </Field>
-          <Btn variant="primary" onClick={run} disabled={busy || !prompt.trim()}>
-            {busy ? "Running…" : "Run request"}
-          </Btn>
-        </div>
-        <div className="mt-4 flex items-center gap-4 text-[15px] text-muted-foreground">
-          <span>{USERS[user].note}</span>
-          <span className="ml-auto rounded bg-muted px-2 py-0.5 text-sm">Fake customers and tools · no email or payment leaves this machine</span>
-        </div>
-      </Panel>
+      <div className="flex flex-col gap-6">
+        {/* One panel: pick a scenario or type your own request, run it, read the result underneath. */}
+        <Panel>
+          <PanelHeader icon={<FlaskConical className="size-5" />} title="Test a request">
+            {result && (
+              <span className="font-mono text-sm text-muted-foreground">
+                {result.run.session} · {Math.round(result.ms)} ms
+              </span>
+            )}
+          </PanelHeader>
+          <div className="px-6 pt-5 pb-5">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr_1.2fr]">
+              <Field label="Example">
+                <Select value={example} onChange={pick} options={[...EXAMPLES.map((e) => ({ value: e.id, label: e.label })), { value: "custom", label: "Custom prompt" }]} />
+              </Field>
+              <Field label="Acting as">
+                <Select value={user} onChange={(v) => { setUser(v); setExample("custom"); }} options={Object.keys(USERS).map((u) => ({ value: u, label: `${u} · ${USERS[u].scenario}` }))} />
+              </Field>
+              <Field label="Model">
+                <Select value={model} onChange={setModel} options={MODELS} />
+              </Field>
+            </div>
 
-      <div className="flex items-start gap-6">
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <Panel>
-            <PanelHeader icon={<FlaskConical className="size-5" />} title="Test a request">
-              {result && (
-                <span className="font-mono text-sm text-muted-foreground">
-                  {result.run.session} · {Math.round(result.ms)} ms
-                </span>
-              )}
-            </PanelHeader>
-            <div className="px-6 pt-5 pb-6">
-              <div className="mb-2 flex items-baseline">
-                <SectionLabel>User request</SectionLabel>
-                <span className="ml-auto text-sm text-muted-foreground">
-                  {user} · {USERS[user].role}
-                </span>
-              </div>
+            <div className="mt-5 mb-2 flex items-baseline">
+              <SectionLabel>User request</SectionLabel>
+              <span className="ml-auto text-sm text-muted-foreground">{USERS[user].note}</span>
+            </div>
+            <div className="flex items-end gap-3">
               <textarea
                 value={prompt}
                 onChange={(e) => { setPrompt(e.target.value); setExample("custom"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); }}
                 rows={2}
-                className="w-full resize-none rounded-md border border-input bg-muted px-4 py-3 text-[17px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label="User request"
+                className="min-w-0 flex-1 resize-none rounded-md border border-input bg-muted px-4 py-3 text-[17px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               />
-              <div className="mt-1 text-xs text-muted-foreground">Ctrl + Enter to run</div>
-              {error && <div className="mt-4 rounded-md bg-block-soft px-4 py-3 text-sm text-block">Run failed: {error}</div>}
+              <Btn variant="primary" onClick={run} disabled={busy || !prompt.trim()}>
+                <Play className="size-5" /> {busy ? "Running…" : "Run request"}
+              </Btn>
             </div>
-            {busy && <div className="border-t px-6 py-10 text-center text-muted-foreground">The agent is working through the gateway…</div>}
-            {result && !busy && <Result result={result} />}
-          </Panel>
+            <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+              <span>Pick an example or type your own request · Ctrl + Enter to run</span>
+              <span className="ml-auto rounded bg-muted px-2 py-0.5">Fake customers and tools · no email or payment leaves this machine</span>
+            </div>
+            {error && <div className="mt-4 rounded-md bg-block-soft px-4 py-3 text-sm text-block">Run failed: {error}</div>}
+          </div>
+          {busy && <div className="border-t px-6 py-10 text-center text-muted-foreground">The agent is working through the gateway…</div>}
+          {result && !busy && <Result result={result} />}
+        </Panel>
 
-          <ControlsTable policy={policy} fired={a?.fired ?? null} />
-        </div>
-
-        <LivePolicy policy={policy} history={history} />
+        <ControlsTable policy={policy} fired={a?.fired ?? null} />
       </div>
     </>
   );
@@ -144,7 +139,7 @@ function FlowStrip({ a }: { a: Analysis | null }) {
   const steps = [
     { icon: User, title: "User request", note: "Asks the agent for help" },
     { icon: Bot, title: "AI model", note: "Proposes tool calls" },
-    { icon: ShieldCheck, title: "FlowGuard policy checks", note: "Check before acting · filter before the model · block before leaving", focus: true },
+    { icon: ShieldCheck, title: "FlowGuard policy checks", note: "Allow, block or redact each step", focus: true },
     { icon: Database, title: "Bank tools", note: "Run only the calls that were allowed" },
   ];
   return (
@@ -153,18 +148,19 @@ function FlowStrip({ a }: { a: Analysis | null }) {
         <h2 className="font-semibold">Every model request and tool call passes through FlowGuard</h2>
         <span className="ml-auto font-mono text-xs tracking-wide text-muted-foreground uppercase">Check before acting · Filter before the model · Block before leaving</span>
       </div>
-      <div className="flex items-stretch gap-3">
+      {/* Grid, not flex: every card gets the same width and the row's height, arrows sit in their own columns. */}
+      <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-stretch gap-3">
         {steps.map((s, i) => (
-          <div key={s.title} className="flex flex-1 items-center gap-3">
-            <div className={cn("flex flex-1 items-start gap-3 rounded-md border px-4 py-3", s.focus && "border-primary bg-selected ring-1 ring-primary")}>
+          <Fragment key={s.title}>
+            <div className={cn("flex min-w-0 items-start gap-3 rounded-md border px-4 py-3", s.focus && "border-primary bg-selected ring-1 ring-primary")}>
               <s.icon className="mt-0.5 size-5 shrink-0" />
-              <div>
+              <div className="min-w-0">
                 <div className="font-medium">{s.title}</div>
                 <div className="text-sm text-muted-foreground">{s.note}</div>
               </div>
             </div>
-            {i < steps.length - 1 && <ArrowRight className="size-5 shrink-0 text-muted-foreground" />}
-          </div>
+            {i < steps.length - 1 && <ArrowRight className="size-5 self-center text-muted-foreground" />}
+          </Fragment>
         ))}
       </div>
       <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
@@ -341,60 +337,6 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
       </table>
       <div className="flex items-center gap-2 border-t bg-muted px-6 py-3 text-sm text-muted-foreground">
         <Info className="size-4" /> Block beats redact beats flag. If a check fails or times out, the request is blocked (fail closed).
-      </div>
-    </Panel>
-  );
-}
-
-function LivePolicy({ policy, history }: { policy: Policy | null; history: PolicyHistoryItem[] | null }) {
-  const changes = (history ?? []).filter((h) => h.error || h.changes?.length).slice(0, 6);
-  return (
-    <Panel className="sticky top-6 w-[420px] shrink-0">
-      <PanelHeader icon={<History className="size-5" />} title="Live policy">
-        <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">{policy?.version ?? "…"}</span>
-      </PanelHeader>
-      <div className="px-6 py-5">
-        <h3 className="text-xl font-medium">Change the rules while it runs</h3>
-        <p className="mt-2 text-[15px] text-muted-foreground">
-          Edit <span className="font-mono text-sm text-foreground">policy/policy.yaml</span>. The gateway reloads it within seconds, without a restart, and records
-          every change in the audit trail.
-        </p>
-
-        <SectionLabel className="mt-5 mb-2">Try</SectionLabel>
-        <pre className="rounded-md bg-muted px-4 py-3 font-mono text-sm leading-relaxed">
-          {`active_profile: strict      # or permissive\n\ncontrols:\n  pii.iban: {action: flag}`}
-        </pre>
-
-        <SectionLabel className="mt-6 mb-3">Recent changes</SectionLabel>
-        {changes.length ? (
-          <ul className="flex flex-col gap-3">
-            {changes.map((h, i) => (
-              <li key={i} className={cn("rounded-md border px-3 py-2.5", h.error && "border-block/30 bg-block-soft")}>
-                <div className="flex items-baseline gap-2 font-mono text-xs text-muted-foreground">
-                  <span className="text-foreground">{h.version}</span>
-                  <span>· {h.profile}</span>
-                  {h.ts && <span className="ml-auto">{utcTime(h.ts, false)}</span>}
-                </div>
-                {h.error ? (
-                  <div className="mt-1 text-sm text-block">Rejected, last good policy kept: {h.error}</div>
-                ) : (
-                  h.changes.map((c, j) => (
-                    <div key={j} className="mt-1 font-mono text-xs">
-                      {c.what}: <span className="text-block line-through">{JSON.stringify(c.old)}</span> → <span className="text-allow">{JSON.stringify(c.new)}</span>
-                    </div>
-                  ))
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="text-sm text-muted-foreground">No edits since the gateway started.</div>
-        )}
-
-        <div className="mt-6 flex gap-3 rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
-          <Lock className="mt-0.5 size-4 shrink-0" />
-          The dashboard is read-only. Rules live in one YAML file, and every decision in the audit trail names the policy version that made it.
-        </div>
       </div>
     </Panel>
   );
