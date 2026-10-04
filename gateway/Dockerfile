@@ -13,6 +13,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 FROM base AS test
 RUN uv sync --locked
 COPY tests/ /app/tests/
+COPY feeds/ /app/feeds/
 CMD ["pytest", "-q"]
 
 FROM base AS runtime

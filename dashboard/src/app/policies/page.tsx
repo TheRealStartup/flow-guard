@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { History, Radio, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { usePoll, type Action, type ControlConfig, type PolicyChange } from "@/lib/api";
 import { useAuditEvents, useOnPolicyChange, usePolicyLive } from "@/lib/stream";
-import { CONTROLS, OWASP, OWASP_LLM, utcTime } from "@/lib/format";
+import { ACTION_HINT, ACTION_LABEL, CONTROLS, OWASP, OWASP_LLM, utcTime } from "@/lib/format";
 import { Panel, PanelHeader } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -176,7 +176,7 @@ export default function PoliciesPage() {
             profile {d?.profile ?? "…"} · click an action to change it (written to policy.yaml, audited like any edit)
           </span>
           <span className="ml-auto text-sm text-muted-foreground">
-            If a check fails: <b className="font-medium text-foreground">{d?.defaults.on_error ?? "block"}</b> · Fired = blocked, redacted or flagged in the last 24 h
+            If a check fails: <b className="font-medium text-foreground">{d?.defaults.on_error ?? "block"}</b> · Used = blocked, hidden or flagged in the last 24 h
           </span>
         </div>
         {toggleError && (
@@ -195,7 +195,7 @@ export default function PoliciesPage() {
               <th className="py-3">Kind</th>
               <th className="py-3">Action</th>
               <th className="py-3">Settings</th>
-              <th className="py-3 pr-4 text-right">Fired · 24 h</th>
+              <th className="py-3 pr-4 text-right">Used · 24 h</th>
               <th className="py-3 pr-6">OWASP</th>
             </tr>
           </thead>
@@ -553,6 +553,7 @@ function ActionToggle({
       {options.map((a) => (
         <button
           key={a}
+          title={ACTION_HINT[a]}
           role="radio"
           aria-checked={value === a}
           disabled={pending || !!locked || value === a}
@@ -562,7 +563,7 @@ function ActionToggle({
             value === a ? cn(TOGGLE[a], "font-semibold") : "bg-card text-muted-foreground enabled:hover:bg-accent",
           )}
         >
-          {labels?.[a] ?? a}
+          {labels?.[a] ?? ACTION_LABEL[a]}
         </button>
       ))}
     </div>

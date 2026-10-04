@@ -1,6 +1,6 @@
 import { ChevronDown, Info } from "lucide-react";
 import type { Action, AuditEvent, Outcome, Verdict } from "@/lib/api";
-import { ACTION_LABEL, OUTCOME_LABEL } from "@/lib/format";
+import { ACTION_HINT, ACTION_LABEL, OUTCOME_LABEL } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Small pieces shared by the Audit trail and Live demo pages, styled after the Figma designs.
@@ -79,7 +79,7 @@ export function VerdictPill({ event }: { event: AuditEvent }) {
 }
 
 export const ActionPill = ({ action }: { action: Action }) => (
-  <Pill tone={actionTone(action)} dot={false}>
+  <Pill tone={actionTone(action)} dot={false} title={ACTION_HINT[action]}>
     {ACTION_LABEL[action]}
   </Pill>
 );

@@ -4,6 +4,7 @@ Set ACL_LIVE=1 to run the tests marked `live` against the real Jev API."""
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -23,6 +24,7 @@ sys.path.insert(0, str(ROOT / "demo"))
 
 from acl.adapters.llm_proxy import compromised_model
 from acl.detectors.jev import Verdict
+from acl.policy import set_control_action
 from main import create_app
 
 DEV_KEYS = {line.split("=", 1)[0].removeprefix("ACL_KEY_").lower(): line.split("=", 1)[1].strip()
@@ -75,6 +77,18 @@ class Gateway:
         self.dir = tmp / "policy"
         shutil.copytree(ROOT / "policy", self.dir)
         self.policy_path = self.dir / "policy.yaml"
+        # Dashboard toggles are live application state, not the suite's baseline.
+        # Keep the current policy structure/thresholds but explicitly select the protections
+        # these tests exercise. Changes in a test still use the real policy reload path.
+        text = self.policy_path.read_text()
+        raw = yaml.safe_load(text)
+        text = re.sub(r"(?m)^active_profile:.*$", "active_profile: balanced", text)
+        for name, control in raw["controls"].items():
+            action = ("redact" if name.startswith("pii.") or name in
+                      {"secrets", "barrier.mnpi", "injection.jev"} else
+                      "flag" if name == "spotlight" else "block")
+            text = set_control_action(text, name, action)
+        self.policy_path.write_text(text)
         self.judge = FakeJudge()
         self.upstream = ScriptedUpstream()
         self.app = create_app(self.policy_path, tmp / "audit.jsonl", self.judge, self.upstream)

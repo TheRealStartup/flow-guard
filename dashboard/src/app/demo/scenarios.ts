@@ -3,13 +3,13 @@
 export type Scenario = "support" | "onboarding" | "developer" | "hr";
 
 // `title` is what the picker shows: the person's job, as in policy/directory.yaml (not the scenario's name).
-export const USERS: Record<string, { scenario: Scenario; role: string; title: string; note: string }> = {
-  alice: { scenario: "support", role: "support_junior", title: "Support (junior)", note: "Support junior · may call get_customer, send_email" },
-  bob: { scenario: "support", role: "fraud_analyst", title: "Fraud analyst", note: "Fraud analyst · may also call charge_card" },
-  olivia: { scenario: "onboarding", role: "onboarding_analyst", title: "Onboarding analyst", note: "Onboarding analyst · public side · assigned client NW-2041" },
-  marcus: { scenario: "onboarding", role: "mna_banker", title: "M&A banker", note: "M&A banker · private side · Project Falcon deal team" },
-  devon: { scenario: "developer", role: "developer", title: "Developer", note: "Developer · list_files, read_file, run_tests, http_post" },
-  hana: { scenario: "hr", role: "hr_admin", title: "HR administrator", note: "HR administrator · personnel files E-1001, E-1002 · AI may not judge people" },
+export const USERS: Record<string, { scenario: Scenario; role: string; title: string; access: string }> = {
+  alice: { scenario: "support", role: "support_junior", title: "Junior support agent", access: "Customer records and support emails." },
+  bob: { scenario: "support", role: "fraud_analyst", title: "Fraud analyst", access: "Customer records, support emails and card payments." },
+  olivia: { scenario: "onboarding", role: "onboarding_analyst", title: "Onboarding analyst", access: "Onboarding and sanctions screening for assigned client NW-2041; public-side access." },
+  marcus: { scenario: "onboarding", role: "mna_banker", title: "M&A banker", access: "Deal documents for Project Falcon; private-side access." },
+  devon: { scenario: "developer", role: "developer", title: "Developer", access: "Repository files, tests and development tools." },
+  hana: { scenario: "hr", role: "hr_admin", title: "HR administrator", access: "HR policies and administration for assigned employees E-1001 and E-1002." },
 };
 
 export const EXAMPLES: { id: string; label: string; user: string; prompt: string }[] = [

@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .protection import reporting
+
 TOKEN_RE = re.compile(r"\[\[([A-Z]+)#([0-9a-f]{6})[^\]]*\]\]")
 _TOKEN_KEY = os.urandom(16)
 
@@ -32,6 +34,7 @@ class Session:
     seen: set[str] = field(default_factory=set)  # hashes of messages already checked and logged
     quarantined: dict[str, str] = field(default_factory=dict)  # message hash -> replacement text
     judged: set[str] = field(default_factory=set)  # hashes of messages the injection check has passed
+    judge_version: str | None = None
     issued: dict[str, tuple[str, str]] = field(default_factory=dict)  # tool-call id -> (tool, arguments) this gateway let through
     spotlight_id: str = field(default_factory=lambda: secrets.token_hex(4))  # in the tool-data markers; unguessable
     tokens: int = 0
@@ -72,6 +75,7 @@ class AuditLog:
 
     def __init__(self, path: Path):
         self.path = path
+        self.checkpoint = path.with_suffix(path.suffix + ".head.json")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
@@ -114,11 +118,17 @@ class AuditLog:
         with self._lock, self.path.open("a") as f:
             if fcntl:
                 fcntl.flock(f, fcntl.LOCK_EX)  # released when the file closes
+            if self.checkpoint.exists() and not self._verify()["ok"]:
+                raise ValueError("audit integrity check failed; refusing to append")
             self._sync()  # whatever other writers appended first
-            entry = {"seq": len(self._events), "ts": time.time(), **entry, "prev_hash": self._prev}
+            entry = {"seq": len(self._events), "ts": time.time(), **reporting(entry), "prev_hash": self._prev}
             entry["hash"] = self._digest(self._prev, entry)
             f.write(json.dumps(entry, default=str) + "\n")
             f.flush()
+            os.fsync(f.fileno())
+            temporary = self.checkpoint.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"entries": entry["seq"] + 1, "head": entry["hash"]}))
+            os.replace(temporary, self.checkpoint)
             self._sync()  # reads the line back, which also notifies the listeners
             return self._events[-1]
 
@@ -140,11 +150,34 @@ class AuditLog:
         return len(self._listeners)
 
     def verify(self) -> dict[str, Any]:
+        # Match the writer's locking: readers cannot observe the short interval between
+        # the durable log append and the checkpoint's atomic replacement.
+        with self._lock:
+            if not self.path.exists():
+                return self._verify()
+            with self.path.open("r") as f:
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                return self._verify()
+
+    def _verify(self) -> dict[str, Any]:
         prev = "0" * 64
         lines = [ln for ln in self.path.read_text().splitlines() if ln.strip()] if self.path.exists() else []
         for i, line in enumerate(lines):
-            e = json.loads(line)
-            if e.get("prev_hash") != prev or self._digest(prev, e) != e.get("hash"):
+            try:
+                e = json.loads(line)
+            except ValueError:
+                return {"ok": False, "entries": len(lines), "broken_at": i}
+            if not isinstance(e, dict) or e.get("prev_hash") != prev or self._digest(prev, e) != e.get("hash"):
                 return {"ok": False, "entries": len(lines), "broken_at": i}
             prev = e["hash"]
+        if self.checkpoint.exists():
+            try:
+                head = json.loads(self.checkpoint.read_text())
+            except ValueError:
+                return {"ok": False, "entries": len(lines), "broken_at": len(lines)}
+            if head != {"entries": len(lines), "head": prev}:
+                return {"ok": False, "entries": len(lines), "broken_at": len(lines), "reason": "audit checkpoint mismatch"}
+        elif self._events:
+            return {"ok": False, "entries": len(lines), "broken_at": len(lines), "reason": "audit checkpoint missing"}
         return {"ok": True, "entries": len(lines), "head": prev}

@@ -4,15 +4,15 @@ import type { Action, AuditEvent, Decision, ExchangeEvent, Outcome } from "./api
 export const CONTROLS: Record<string, { name: string; kind: string; scope: string }> = {
   "models.allowlist": { name: "Model allowlist", kind: "Access", scope: "Only models listed in the policy" },
   budget: { name: "Session budget", kind: "Budget", scope: "Tokens, cost, tool calls and compute per session" },
-  "pii.card": { name: "Card number protection", kind: "Privacy", scope: "Card numbers (regex + Luhn) → reversible token" },
-  "pii.iban": { name: "IBAN protection", kind: "Privacy", scope: "IBANs → reversible token" },
-  "pii.pesel": { name: "National ID protection", kind: "Privacy", scope: "PESEL with checksum → reversible token" },
-  "pii.passport": { name: "Passport protection", kind: "Privacy", scope: "Labelled passport numbers → reversible token" },
-  "pii.dob": { name: "Date-of-birth protection", kind: "Privacy", scope: "Labelled dates of birth → reversible token" },
+  "pii.card": { name: "Card number protection", kind: "Privacy", scope: "Payment card numbers with a valid network prefix and checksum" },
+  "pii.iban": { name: "IBAN protection", kind: "Privacy", scope: "Bank account numbers with a valid IBAN checksum" },
+  "pii.pesel": { name: "National ID protection", kind: "Privacy", scope: "Polish national ID numbers with a valid PESEL checksum" },
+  "pii.passport": { name: "Passport protection", kind: "Privacy", scope: "Labelled passport numbers" },
+  "pii.dob": { name: "Date-of-birth protection", kind: "Privacy", scope: "Labelled dates of birth" },
   "pii.detokenize": { name: "Real value released", kind: "Privacy", scope: "Real values only for approved tools" },
   "barrier.mnpi": { name: "Information barrier", kind: "Barrier", scope: "Restricted deals withheld from the public side" },
   "access.scope": { name: "Client scope", kind: "Scope", scope: "Tool arguments limited to assigned clients" },
-  secrets: { name: "Secret protection", kind: "Privacy", scope: "API keys and private keys → token" },
+  secrets: { name: "Secret protection", kind: "Privacy", scope: "API keys and private keys" },
   signatures: { name: "Threat signatures", kind: "Threat", scope: "Known attack patterns from the signature feed" },
   "access.tools": { name: "Role → tool access", kind: "Access", scope: "Each role may call only its listed tools" },
   "flow.sensitive_to_external": { name: "Sensitive data stays inside", kind: "Flow", scope: "Tokens and MNPI may not reach external sinks" },
@@ -60,7 +60,14 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   blocked: "Blocked",
 };
 
-export const ACTION_LABEL: Record<Action, string> = { allow: "Allow", flag: "Flag", redact: "Redact", block: "Block" };
+export const ACTION_LABEL: Record<Action, string> = { allow: "Allow", flag: "Flag", redact: "Hidden", block: "Block" };
+
+export const ACTION_HINT: Record<Action, string> = {
+  allow: "Pass unchanged",
+  flag: "Pass unchanged and record for review",
+  redact: "Hide detected values with reversible tokens, or withhold protected content",
+  block: "Stop the request or tool call",
+};
 
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 

@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..engine import Engine
 from ..identity import Denied, resolve
+from ..protection import masked
 from .llm_proxy import Upstream, _blocked_completion, call_upstream
 
 STOP = {"tool_calls": "tool_use", "stop": "end_turn", "length": "max_tokens", "content_filter": "refusal"}
@@ -86,7 +87,7 @@ def to_anthropic(resp: dict[str, Any], model: str) -> dict[str, Any]:
     msg = choice.get("message") or {}
     content: list[dict[str, Any]] = []
     if msg.get("content"):
-        content.append({"type": "text", "text": msg["content"]})
+        content.append({"type": "text", "text": _text(msg["content"])})
     for tc in msg.get("tool_calls") or []:
         fn = tc.get("function", {})
         try:
@@ -132,7 +133,7 @@ def _session_hint(body: dict[str, Any], header: str | None) -> str | None:
 
 
 def _error(status: int, kind: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
-    return JSONResponse({"type": "error", "error": {"type": kind, "message": message}}, status_code=status, headers=headers)
+    return JSONResponse({"type": "error", "error": {"type": kind, "message": masked(message)}}, status_code=status, headers=headers)
 
 
 def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
@@ -178,19 +179,22 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
             resp = _blocked_completion(ex.model, f"⛔ Request blocked by FlowGuard [{d.control}]: {d.reason}")
         else:
             t = time.perf_counter()
-            raw = await upstream(oa, ex.policy.models.get(ex.model, {}))
+            try:
+                raw = await upstream(oa, ex.policy.models.get(ex.model, {}))
+            finally:
+                engine.release_budget(ex)
             upstream_ms = (time.perf_counter() - t) * 1000
             resp = engine.check_response(raw, ex, upstream_ms)
         t = time.perf_counter()
-        out = to_anthropic(resp, str(body.get("model")))
+        out = to_anthropic(resp, masked(str(body.get("model"))))
         ex.controls_ms += translate_ms + (time.perf_counter() - t) * 1000
 
         entry = engine.record(ex, upstream_ms)
-        headers = {"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": who.sid, "X-ACL-Seq": str(entry["seq"])}
+        headers = {"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": entry["session"], "X-ACL-Seq": str(entry["seq"])}
         if body.get("stream"):
             return StreamingResponse(sse(out), media_type="text/event-stream", headers=headers)
         out["acl"] = {"seq": entry["seq"], "outcome": entry["outcome"], "decisions": entry["decisions"],
-                      "policy_version": entry["policy_version"], "session": who.sid, "user": who.user, "agent": who.agent}
+                      "policy_version": entry["policy_version"], "session": entry["session"], "user": entry["user"], "agent": entry["agent"]}
         return JSONResponse(out, headers=headers)
 
     return r

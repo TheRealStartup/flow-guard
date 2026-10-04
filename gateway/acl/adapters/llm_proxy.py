@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from ..engine import Engine
 from ..identity import Denied, resolve
 from ..report import summarize
+from ..protection import masked
 from .mock_model import compromised_model
 
 Upstream = Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -34,7 +35,7 @@ async def call_upstream(body: dict[str, Any], model_cfg: dict[str, Any]) -> dict
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(url, json=body, headers=headers)
         if r.status_code >= 400:
-            raise HTTPException(502, f"upstream {r.status_code}: {r.text[:300]}")
+            raise HTTPException(502, f"upstream {r.status_code}: {masked(r.text[:300])}")
         return r.json()
 
 
@@ -43,8 +44,8 @@ def _blocked_completion(model: str, text: str) -> dict[str, Any]:
         "id": f"acl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
         "created": int(time.time()),
-        "model": model,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+        "model": masked(model),
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": masked(text)}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
@@ -68,7 +69,7 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
         who = resolve(engine, key=key, x_user=x_user, x_purpose=x_purpose, x_session=x_session)
         if isinstance(who, Denied):
             entry = engine.deny(who.reason, user=who.user, agent=who.agent, purpose=x_purpose, sid=x_session)
-            return JSONResponse({"error": {"type": "acl_denied", "message": who.reason}, "acl": {"seq": entry["seq"], "outcome": "blocked"}},
+            return JSONResponse({"error": {"type": "acl_denied", "message": masked(who.reason)}, "acl": {"seq": entry["seq"], "outcome": "blocked"}},
                                 status_code=who.status, headers={"X-ACL-Outcome": "blocked"})
         user, agent, sid = who.user, who.agent, who.sid
         body, ex = await engine.check_request(body, user, sid, agent, who.purpose)
@@ -79,15 +80,18 @@ def router(engine: Engine, upstream: Upstream = call_upstream) -> APIRouter:
             resp = _blocked_completion(ex.model, f"⛔ Request blocked by FlowGuard [{d.control}]: {d.reason}")
         else:
             t = time.perf_counter()
-            raw = await upstream(body, ex.policy.models.get(ex.model, {}))
+            try:
+                raw = await upstream(body, ex.policy.models.get(ex.model, {}))
+            finally:
+                engine.release_budget(ex)
             upstream_ms = (time.perf_counter() - t) * 1000
             resp = engine.check_response(raw, ex, upstream_ms)
 
         entry = engine.record(ex, upstream_ms)
         resp["acl"] = {"seq": entry["seq"], "outcome": entry["outcome"], "decisions": entry["decisions"],
-                       "policy_version": entry["policy_version"], "session": sid,
-                       "user": user, "agent": agent, "threats": entry["threats"], "summary": summarize(entry),
+                       "policy_version": entry["policy_version"], "session": entry["session"],
+                       "user": entry["user"], "agent": entry["agent"], "threats": entry["threats"], "summary": summarize(entry),
                        "controls_ms": entry["controls_ms"], "upstream_ms": entry["upstream_ms"]}
-        return JSONResponse(resp, headers={"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": sid})
+        return JSONResponse(resp, headers={"X-ACL-Outcome": entry["outcome"], "X-ACL-Session": entry["session"]})
 
     return r

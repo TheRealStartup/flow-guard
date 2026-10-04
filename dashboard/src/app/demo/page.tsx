@@ -106,9 +106,12 @@ export default function DemoPage() {
               </Field>
             </div>
 
-            <div className="mt-5 mb-2 flex items-baseline">
+            <div className="mt-4 rounded-md bg-muted px-4 py-3 text-sm">
+              <p><span className="font-medium">Access for this actor:</span> {USERS[user].access}</p>
+              <p className="mt-1 text-muted-foreground">FlowGuard checks requests against this actor&apos;s role and access, using the active controls below.</p>
+            </div>
+            <div className="mt-5 mb-2">
               <SectionLabel>User request</SectionLabel>
-              <span className="ml-auto text-sm text-muted-foreground">{USERS[user].note}</span>
             </div>
             <div className="flex items-end gap-3">
               <textarea
@@ -159,7 +162,7 @@ function FlowStrip({ a, ms }: { a: Analysis | null; ms: number | null }) {
   const steps = [
     { icon: User, title: "User request", note: "Asks the agent for help" },
     { icon: Bot, title: "AI model", note: "Proposes tool calls" },
-    { icon: ShieldCheck, title: "FlowGuard policy checks", note: "Allow, block or redact each step", focus: true },
+    { icon: ShieldCheck, title: "FlowGuard policy checks", note: "Allow, block or hide data at each step", focus: true },
     { icon: Database, title: "Bank tools", note: "Run only the calls that were allowed" },
   ];
   return (
@@ -393,7 +396,7 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
           <tr>
             <th className="py-2.5 pl-6 font-normal">Control</th>
             <th className="py-2.5 font-normal">Kind</th>
-            <th className="py-2.5 font-normal">Outcome</th>
+            <th className="py-2.5 font-normal">Configured action</th>
             <th className="py-2.5 pr-6 font-normal">Conditions & scope</th>
           </tr>
         </thead>
@@ -408,12 +411,15 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
             const hit = fired?.has(id);
             return (
               <tr key={id} className={cn("border-b border-l-2 border-l-transparent last:border-b-0", hit && "border-l-primary bg-selected")}>
-                <td className="py-3 pl-6">
-                  <div className="flex items-center gap-2">
-                    {meta?.name ?? id}
-                    {hit && <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] tracking-wide text-primary-foreground uppercase">fired</span>}
-                  </div>
+                <td className="py-3 pr-5 pl-6">
+                  <div className="font-medium">{meta?.name ?? id}</div>
                   <div className="font-mono text-xs text-muted-foreground">{id}</div>
+                  {hit && (
+                    <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Check className="size-3 shrink-0" aria-hidden="true" />
+                      Used in this run
+                    </div>
+                  )}
                 </td>
                 <td className="py-3 pr-3 text-muted-foreground">{meta?.kind ?? "—"}</td>
                 <td className="py-3 pr-3">
@@ -429,7 +435,7 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
         </tbody>
       </table>
       <div className="flex items-center gap-2 border-t bg-muted px-6 py-3 text-sm text-muted-foreground">
-        <Info className="size-4" /> Block beats redact beats flag. If a check fails or times out, the request is blocked (fail closed).
+        <Info className="size-4" /> Block takes priority over hiding, then flagging. Hidden values are replaced with reversible tokens; protected content is withheld.
       </div>
     </Panel>
   );
