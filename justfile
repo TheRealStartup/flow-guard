@@ -62,6 +62,10 @@ claude-code model="mock/compromised" *args:
 onboarding-desk model="deepseek/deepseek-v4.1-flash" *args:
     cd gateway && uv run python ../demo/claude_onboarding.py --model "$1" -- "${@:2}"
 
+# the same case folder for the Claude Desktop Code tab (gateway connection in the folder's .claude/settings.local.json)
+onboarding-desk-desktop model="deepseek/deepseek-v4.1-flash":
+    cd gateway && uv run python ../demo/claude_onboarding.py --desktop --model {{model}}
+
 # new API key for a user's agent: prints the key (give it to the agent) and the line for policy/identities.yaml
 new-key user agent:
     @python3 -c "import secrets,hashlib; k='acl_'+'{{user}}'+'_'+secrets.token_hex(16); print('key (give to the agent, store nowhere else):', k); print('add to policy/identities.yaml:'); print('  - {user: {{user}}, agent: {{agent}}, key_sha256: '+hashlib.sha256(k.encode()).hexdigest()+'}')"

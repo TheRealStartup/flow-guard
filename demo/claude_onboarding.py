@@ -7,6 +7,10 @@ Run with `just onboarding-desk` while the gateway runs. Creates the case folder 
 Claude Code gets its own config dir (gateway/data/claude-onboarding/), so your own settings stay out of the demo, and
 it talks to the model only through the gateway (ANTHROPIC_BASE_URL) with olivia's desk key.
 
+Claude Desktop (Code tab): `just onboarding-desk-desktop` prepares the same folder without starting the terminal
+Claude, and writes the gateway connection into the folder's own `.claude/settings.local.json` (Desktop does not see
+the environment variables the terminal version gets). Then open that folder in the Code tab.
+
 Try, with the dashboard open next to it:
   "Prepare the KYC memo for case NW-2041."
   → documents come from the Onboarding Hub; passports, dates of birth and the IBAN reach the model only as tokens;
@@ -95,12 +99,31 @@ def env(model: str, gateway: str) -> dict[str, str]:
     return e
 
 
+def desktop_settings(folder: Path, model: str, gateway: str) -> Path:
+    """For the Claude Desktop Code tab: the same gateway connection and approvals as project settings of the folder."""
+    path = folder / ".claude" / "settings.local.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    keys = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+    gw = {k: v for k, v in env(model, gateway).items() if k in keys}  # only these: never the caller's own session vars
+    allow = sorted({f"mcp__{s}" for s in SYSTEMS} | {"Write(KYC_MEMO.md)", "Edit(KYC_MEMO.md)"})
+    path.write_text(json.dumps({"env": gw, "enableAllProjectMcpServers": True, "permissions": {"allow": allow}}, indent=2) + "\n")
+    return path
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="deepseek/deepseek-v4.1-flash")
     ap.add_argument("--gateway", default=os.getenv("ACL_GATEWAY", "http://localhost:8000"))
+    ap.add_argument("--desktop", action="store_true", help="prepare the folder for the Claude Desktop Code tab; do not start claude")
     ap.add_argument("claude_args", nargs=argparse.REMAINDER, help="passed to claude, e.g. -- -p 'Prepare the KYC memo'")
     a = ap.parse_args()
+    if a.desktop:
+        folder = make_folder()
+        desktop_settings(folder, a.model, a.gateway)
+        print(f"Case folder ready for Claude Desktop: {folder}\nOpen it in the Code tab, then ask: "
+              f"\"Prepare the KYC memo for case NW-2041.\"\nModel traffic goes to {a.gateway} as olivia / claude-code.")
+        return
     claude = shutil.which("claude") or sys.exit("claude not found on PATH (install Claude Code)")
     folder = make_folder()
     configure()
