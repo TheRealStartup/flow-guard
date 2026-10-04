@@ -1,14 +1,14 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
-import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, Info, ListTree, Play, RotateCcw, ShieldCheck, User, X } from "lucide-react";
-import { getJSON, type Policy, type TryResult } from "@/lib/api";
-import { usePolicyLive } from "@/lib/stream";
-import { CONTROLS, controlName } from "@/lib/format";
-import { ActionPill, Btn, Field, PageHeader, Panel, PanelHeader, Pill, SectionLabel, Select, Stat, StatRow, TEXT } from "@/components/kit";
+import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, Info, ListTree, Loader2, Play, RotateCcw, ShieldAlert, ShieldCheck, User, X } from "lucide-react";
+import { getJSON, type ExchangeEvent, type Policy, type TryResult } from "@/lib/api";
+import { useAuditEvents, usePolicyLive } from "@/lib/stream";
+import { CONTROLS, controlName, eventLines } from "@/lib/format";
+import { ActionPill, Btn, Field, PageHeader, Panel, PanelHeader, Pill, SectionLabel, Select, Stat, TEXT, VERDICT_TONE, VerdictPill } from "@/components/kit";
 import { cn } from "@/lib/utils";
 import { analyse, type Analysis } from "./analyse";
 import { EXAMPLES, MODELS, USERS } from "./scenarios";
@@ -21,6 +21,18 @@ export default function DemoPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ run: TryResult; a: Analysis; ms: number } | null>(null);
+  // The run's session id, chosen here so its audit entries can be followed on the live stream while it runs.
+  const [sid, setSid] = useState<string | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const { data: events } = useAuditEvents(300);
+  const steps = useMemo(
+    () => (sid ? (events ?? []).filter((e): e is ExchangeEvent => e.type === "exchange" && e.session === sid).sort((x, y) => x.seq - y.seq) : []),
+    [events, sid],
+  );
+  // When the run ends, bring its verdict into view (it sits below the fold on a laptop).
+  useEffect(() => {
+    if (result) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [result]);
 
   // Refreshed when a policy change streams in; polls every 3 s only while the stream is down.
   const { policy } = usePolicyLive();
@@ -37,12 +49,15 @@ export default function DemoPage() {
   async function run() {
     setBusy(true);
     setError(null);
+    setResult(null);
+    const session = `try-${user}-${Math.random().toString(36).slice(2, 8)}`;
+    setSid(session);
     const t0 = performance.now();
     try {
       const r = await getJSON<TryResult>("/api/try", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user, prompt, model, scenario: USERS[user].scenario }),
+        body: JSON.stringify({ user, prompt, model, scenario: USERS[user].scenario, session }),
       });
       setResult({ run: r, a: analyse(r), ms: performance.now() - t0 });
     } catch (e) {
@@ -53,33 +68,30 @@ export default function DemoPage() {
   }
 
   const a = result?.a;
-  const enforced = policy ? Object.values(policy.controls).filter((c) => c.action !== "allow").length : null;
 
   return (
     <>
       <PageHeader
         title="Live policy demo"
-        subtitle="Define what your AI agents can see. Stop sensitive data before it enters their context."
+        subtitle="Run a real agent through FlowGuard and watch each check as it happens."
       />
 
-      <StatRow>
-        <Stat label="Controls enforced" value={enforced ?? "…"} unit="live" note={policy ? `Profile ${policy.profile} · ${policy.version}` : "Loading policy…"} />
-        <Stat label="Values hidden" value={a ? a.hidden : "—"} unit="this request" tone={a?.hidden ? "redact" : undefined} note="Tokenized before the model saw them" />
-        <Stat label="Actions stopped" value={a ? a.stopped : "—"} unit="this request" tone={a?.stopped ? "block" : undefined} note="Removed from the model's answer, never ran" />
-        <Stat label="Released to tools" value={a ? a.released.length : "—"} unit="this request" tone={a?.released.length ? "flag" : undefined} note="Real values put back for approved tools only" />
-      </StatRow>
+      {/* Counts for this run only; each tile is one kind of action, in the colours used everywhere. */}
+      <div className="mb-6 grid grid-cols-2 divide-border overflow-hidden rounded-lg border bg-card md:grid-cols-3 xl:grid-cols-5 xl:divide-x">
+        <Stat label="Hidden" value={a ? a.hidden : "—"} unit="this run" tone={a?.hidden ? "redact" : undefined} note="Values replaced with tokens before the model saw them" />
+        <Stat label="Quarantined" value={a ? a.quarantined : "—"} unit="this run" tone={a?.quarantined ? "block" : undefined} note="Hidden instructions removed from tool results" />
+        <Stat label="Withheld" value={a ? a.withheld : "—"} unit="this run" tone={a?.withheld ? "redact" : undefined} note="Restricted content kept back" />
+        <Stat label="Blocked" value={a ? a.blocked : "—"} unit="this run" tone={a?.blocked ? "block" : undefined} note="Requests or tool calls that never ran" />
+        <Stat label="Released" value={a ? a.released.length : "—"} unit="this run" note="Real values put back for approved tools only" />
+      </div>
 
-      <FlowStrip a={a ?? null} />
+      <FlowStrip a={a ?? null} ms={result?.ms ?? null} />
 
       <div className="flex flex-col gap-6">
         {/* One panel: pick a scenario or type your own request, run it, read the result underneath. */}
         <Panel>
           <PanelHeader icon={<FlaskConical className="size-5" />} title="Test a request">
-            {result && (
-              <span className="font-mono text-sm text-muted-foreground">
-                {result.run.session} · {Math.round(result.ms)} ms
-              </span>
-            )}
+            {result && <span className="font-mono text-sm text-muted-foreground">{result.run.session}</span>}
           </PanelHeader>
           <div className="px-6 pt-5 pb-5">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr_1.2fr]">
@@ -124,8 +136,10 @@ export default function DemoPage() {
             </div>
             {error && <div className="mt-4 rounded-md bg-block-soft px-4 py-3 text-sm text-block">Run failed: {error}</div>}
           </div>
-          {busy && <div className="border-t px-6 py-10 text-center text-muted-foreground">The agent is working through the gateway…</div>}
-          {result && !busy && <Result result={result} />}
+          {(busy || result) && <LiveSteps steps={steps} busy={busy} />}
+          <div ref={resultRef} className="scroll-mt-6">
+            {result && !busy && <Result result={result} />}
+          </div>
         </Panel>
 
         <ControlsTable policy={policy} fired={a?.fired ?? null} />
@@ -134,7 +148,14 @@ export default function DemoPage() {
   );
 }
 
-function FlowStrip({ a }: { a: Analysis | null }) {
+/** One duration for the whole run, split into where the time went. */
+function duration(a: Analysis, ms: number) {
+  const sec = (x: number) => `${(x / 1000).toFixed(1)} s`;
+  const judge = a.timing.judge >= 50 ? `, of which AI injection check ${sec(a.timing.judge)}` : "";
+  return `Took ${sec(ms)}: model ${sec(a.timing.model)} · FlowGuard checks ${sec(a.timing.checks)}${judge}`;
+}
+
+function FlowStrip({ a, ms }: { a: Analysis | null; ms: number | null }) {
   const steps = [
     { icon: User, title: "User request", note: "Asks the agent for help" },
     { icon: Bot, title: "AI model", note: "Proposes tool calls" },
@@ -165,7 +186,7 @@ function FlowStrip({ a }: { a: Analysis | null }) {
       <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
         <CornerDownLeft className="size-4" />
         {a
-          ? `This run: ${a.decisions.length} checks in ${a.checksMs.toFixed(0)} ms. ${a.summary}.`
+          ? `This run: ${a.summary}. ${ms != null ? duration(a, ms) + "." : ""}`
           : "Tool → FlowGuard → model. Sensitive values never reach the model or the model provider."}
       </div>
     </Panel>
@@ -174,11 +195,11 @@ function FlowStrip({ a }: { a: Analysis | null }) {
 
 const STATUS = {
   ran: { tone: "allow", label: "Ran", icon: Check },
-  released: { tone: "flag", label: "Ran with real values", icon: Check },
-  stopped: { tone: "block", label: "Stopped before it ran", icon: X },
+  released: { tone: "neutral", label: "Ran with real values", icon: Check },
+  stopped: { tone: "block", label: "Blocked before it ran", icon: X },
 } as const;
 
-function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
+function Result({ result }: { result: { run: TryResult; a: Analysis; ms: number } }) {
   const { a } = result;
   const BANNER = { block: "bg-block-soft text-block", redact: "bg-redact-soft text-redact", flag: "bg-flag-soft text-flag", allow: "bg-allow-soft text-allow", neutral: "bg-muted" };
   const stopped = a.actions.filter((x) => x.status === "stopped");
@@ -205,7 +226,10 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
           <ShieldCheck className="size-5" /> {a.verdict.title}
         </div>
         <div className="mt-1 text-[15px]">{a.denied ? `${a.denied.status}: ${a.denied.message}` : a.summary.charAt(0).toUpperCase() + a.summary.slice(1) + "."}</div>
+        <div className="mt-1 text-sm opacity-80">{duration(a, result.ms)}.</div>
       </div>
+
+      {a.attackCaught && <AttackCallout a={a} model={result.run.model} />}
 
       {a.findings.length > 0 ? (
         <table className="w-full text-left text-[15px]">
@@ -243,14 +267,14 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
 
       {stopped.length > 0 && (
         <div className="border-t px-6 py-4">
-          <SectionLabel className="mb-2">Stopped actions</SectionLabel>
+          <SectionLabel className="mb-2">Blocked actions</SectionLabel>
           {stopped.map((x, i) => {
             const why = a.decisions.find((d) => d.action === "block" && d.where === `tool_call:${x.name}`);
             return (
               <div key={i} className="flex items-baseline gap-3 py-1 text-[15px]">
                 <X className="size-4 shrink-0 translate-y-0.5 text-block" />
                 <span className="font-mono">{x.name}</span>
-                <span className="text-muted-foreground">stopped before it ran · {why ? `${controlName(why.control)}: ${why.reason}` : "blocked by policy"}</span>
+                <span className="text-muted-foreground">blocked before it ran · {why ? `${controlName(why.control)}: ${why.reason.replace(/ \(mode=\w+\)/, "")}` : "blocked by policy"}</span>
               </div>
             );
           })}
@@ -258,9 +282,9 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
       )}
 
       <div className="grid grid-cols-4 gap-4 border-t bg-muted px-6 py-4 text-sm">
-        <Checkpoint title="Actions checked" note={`${a.actions.filter((x) => x.status !== "stopped").length} allowed · ${a.stopped} stopped`} />
-        <Checkpoint title="Results filtered" note={`${a.hidden} tokenized · ${a.quarantined} quarantined${a.withheld ? ` · ${a.withheld} withheld` : ""}`} />
-        <Checkpoint title="Answer checked" note={a.answerRedacted ? "Values in the answer tokenized too" : "Nothing to hide in the answer"} />
+        <Checkpoint title="Actions checked" note={`${a.actions.filter((x) => x.status !== "stopped").length} allowed · ${a.stopped} blocked`} />
+        <Checkpoint title="Results filtered" note={`${a.hidden} hidden · ${a.quarantined} quarantined${a.withheld ? ` · ${a.withheld} withheld` : ""}`} />
+        <Checkpoint title="Answer checked" note={a.answerRedacted ? "Values in the answer hidden too" : "Nothing to hide in the answer"} />
         <Checkpoint title="Outbound" note={a.leftOrg.length ? `Sent via ${a.leftOrg.join(", ")}` : "Nothing left the organisation"} />
       </div>
 
@@ -280,6 +304,73 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
         </div>
       </div>
     </>
+  );
+}
+
+/** What a poisoned source wanted, in the scenario's hand-written words; never the injected text itself. */
+function AttackCallout({ a, model }: { a: Analysis; model: string }) {
+  return (
+    <div className="flex gap-3 border-t bg-block-soft px-6 py-4 text-block">
+      <ShieldAlert className="mt-0.5 size-5 shrink-0" />
+      <div className="text-[15px]">
+        <div className="font-semibold">What the attacker tried</div>
+        {a.attacks.length ? (
+          a.attacks.map((x) => (
+            <p key={x.source} className="mt-1">
+              {x.where} (<span className="font-mono text-sm">{x.source}</span>) contained hidden instructions telling the agent to{" "}
+              <strong>{x.wants}</strong>.
+            </p>
+          ))
+        ) : (
+          <p className="mt-1">Text the agent read contained hidden instructions written to give it orders.</p>
+        )}
+        <p className="mt-1">
+          {model.startsWith("mock/")
+            ? "Without FlowGuard, the agent would have done it: this test model obeys every instruction it reads. "
+            : "Without FlowGuard, the model would have read these orders as if they came from the user. "}
+          With FlowGuard,{" "}
+          {a.leftOrg.length ? "it still went out, see below." : "nothing left the organisation."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** The run's audit entries as they arrive on the live stream: one line per round trip through FlowGuard. */
+function LiveSteps({ steps, busy }: { steps: ExchangeEvent[]; busy: boolean }) {
+  return (
+    <div className="border-t px-6 py-4">
+      <SectionLabel className="mb-3">{busy ? "Live: what FlowGuard is doing" : "What FlowGuard did, step by step"}</SectionLabel>
+      <ol className="flex flex-col gap-2" aria-live="polite">
+        {steps.map((e, i) => {
+          const tone = e.summary ? VERDICT_TONE[e.summary.verdict] : "neutral";
+          const Icon = tone === "allow" ? Check : tone === "block" ? ShieldAlert : ShieldCheck;
+          return (
+            <li key={e.seq} className="flex items-start gap-3">
+              <Icon className={cn("mt-0.5 size-5 shrink-0", tone === "neutral" ? "text-muted-foreground" : TEXT[tone])} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="text-sm text-muted-foreground">Step {i + 1}</span>
+                  <span className="font-medium" title={e.summary?.reason}>
+                    {eventLines(e).title}
+                  </span>
+                  <VerdictPill event={e} />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {eventLines(e).detail} · checks {Math.round(e.controls_ms)} ms{e.upstream_ms != null ? ` · model ${(e.upstream_ms / 1000).toFixed(1)} s` : ""}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+        {busy && (
+          <li className="flex items-center gap-3 text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
+            {steps.length ? "Running the allowed tool calls, then back through FlowGuard to the model…" : "Checking the request and asking the model…"}
+          </li>
+        )}
+      </ol>
+    </div>
   );
 }
 

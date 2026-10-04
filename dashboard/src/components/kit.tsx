@@ -1,5 +1,5 @@
-import { ChevronDown } from "lucide-react";
-import type { Action, Outcome } from "@/lib/api";
+import { ChevronDown, Info } from "lucide-react";
+import type { Action, AuditEvent, Outcome, Verdict } from "@/lib/api";
 import { ACTION_LABEL, OUTCOME_LABEL } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +28,9 @@ export const outcomeTone = (o: Outcome): Tone =>
 export const actionTone = (a: Action): Tone =>
   ({ block: "block", redact: "redact", flag: "flag", allow: "allow" })[a] as Tone;
 
-export function Pill({ tone, dot = true, children, className }: { tone: Tone; dot?: boolean; children: React.ReactNode; className?: string }) {
+export function Pill({ tone, dot = true, children, className, title }: { tone: Tone; dot?: boolean; children: React.ReactNode; className?: string; title?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-sm whitespace-nowrap", TONE[tone], className)}>
+    <span title={title} className={cn("inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-sm whitespace-nowrap", TONE[tone], className)}>
       {dot && <span className="size-1.5 rounded-full bg-current" />}
       {children}
     </span>
@@ -38,6 +38,46 @@ export function Pill({ tone, dot = true, children, className }: { tone: Tone; do
 }
 
 export const OutcomePill = ({ outcome }: { outcome: Outcome }) => <Pill tone={outcomeTone(outcome)}>{OUTCOME_LABEL[outcome]}</Pill>;
+// One badge per event, the same in the audit row, the event detail and the Overview (docs/ux-review.md, one term per concept).
+export const VERDICT_TONE: Record<Verdict, Tone> = {
+  attack: "block",
+  blocked: "block",
+  quarantined: "block",
+  withheld: "redact",
+  hidden: "redact",
+  released: "neutral",
+  flagged: "flag",
+  allowed: "allow",
+  policy: "neutral",
+  rejected: "block",
+};
+
+export const VERDICT_HINT: Record<Verdict, string> = {
+  attack: "An injection or an attempt to send data out was caught",
+  blocked: "The request or a tool call was stopped",
+  quarantined: "Injected text was removed before the model saw it",
+  withheld: "Restricted content was kept back",
+  hidden: "Sensitive values were replaced with reversible tokens (tokenized)",
+  released: "Real values went only to a tool the policy approves",
+  flagged: "Let through and recorded for review",
+  allowed: "All checks passed",
+  policy: "The policy file was loaded or changed",
+  rejected: "A policy edit was invalid; the last good policy stays active",
+};
+
+/** The event's badge: the gateway's verdict, or the raw outcome for an entry without a summary. */
+export function VerdictPill({ event }: { event: AuditEvent }) {
+  const s = event.summary;
+  if (s)
+    return (
+      <Pill tone={VERDICT_TONE[s.verdict]} title={VERDICT_HINT[s.verdict]}>
+        {s.label}
+      </Pill>
+    );
+  if (event.type === "policy_change") return <Pill tone={event.error ? "block" : "neutral"}>{event.error ? "Rejected" : "Policy"}</Pill>;
+  return event.threats?.length ? <Pill tone="block">Attack caught</Pill> : <OutcomePill outcome={event.outcome} />;
+}
+
 export const ActionPill = ({ action }: { action: Action }) => (
   <Pill tone={actionTone(action)} dot={false}>
     {ACTION_LABEL[action]}
@@ -160,5 +200,22 @@ export function KV({ rows }: { rows: [string, React.ReactNode][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** An (i) with a definition: shown on hover and on keyboard focus. */
+export function InfoTip({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={cn("group relative inline-flex normal-case", className)}>
+      <span tabIndex={0} role="img" aria-label={text} className="rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+        <Info className="size-4" />
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute top-6 left-1/2 z-20 hidden w-64 -translate-x-1/2 rounded-md border bg-card px-3 py-2 text-left text-sm font-normal tracking-normal text-foreground shadow-lg group-focus-within:block group-hover:block"
+      >
+        {text}
+      </span>
+    </span>
   );
 }

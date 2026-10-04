@@ -15,23 +15,27 @@ demo). This file is the work list. **Fixed** items are marked; everything else i
 - Policies: aligned budget table with readable role names; the scripted model labelled "test only"; Ollama/qwen gone.
 
 ## Open, ranked by impact on a judge
-1. **Rows name the next tool call, not what FlowGuard did** (/audit, /overview). "Get client file · Blocked" says
+1. **Fixed (feature/ux-rework):** the gateway serves a `summary` per entry (verdict, headline, plain reason); rows,
+   detail and the Overview list show it. ~~**Rows name the next tool call, not what FlowGuard did** (/audit, /overview). "Get client file · Blocked" says
    nothing about the scope rule. Add a reason line: "Client scope: AC-7730 is not olivia's client", "Hidden
-   instruction quarantined in the get_client_file result". Make the detail headline that sentence, not "Bash +1". (M)
-2. **One event, several labels.** The row says "Attack defused"; the detail badge for the same event says "Redacted"
+   instruction quarantined in the get_client_file result". Make the detail headline that sentence, not "Bash +1". (M)~~
+2. **Fixed:** one verdict per event from the gateway, same badge everywhere. ~~**One event, several labels.** The row says "Attack defused"; the detail badge for the same event says "Redacted"
    or "Blocked"; the tiles say "Attacks stopped" (Overview) and "Attacks defused" (Audit). One outcome set everywhere,
-   identical badge in row and detail (terminology table below). (S)
-3. **Overview numbers disagree.** In one 24 h view: 26 prompt injections (Attacks tile), 28 (What the controls
+   identical badge in row and detail (terminology table below). (S)~~
+3. **Fixed:** tiles count requests by verdict (Attacks caught, Blocked, Data protected = hidden + withheld) with (i)
+   definitions; the chart stacks the same groups. ~~**Overview numbers disagree.** In one 24 h view: 26 prompt injections (Attacks tile), 28 (What the controls
    caught), 31 messages quarantined (Data protected). Quarantines count in two tiles. One number per concept with an
    (i) definition: attacks = requests where an attack was caught; data protected = values hidden + values withheld.
-   "12 requests blocked" covers scope, budget and identity, which are not attacks: give it its own line. (S/M)
-4. **Live demo shows that an attack was stopped, not what it wanted.** The worst-case run ends with "Done." and one
+   "12 requests blocked" covers scope, budget and identity, which are not attacks: give it its own line. (S/M)~~
+4. **Fixed:** "What the attacker tried" callout from hand-written, behaviour-tested descriptions (ATTACKS in the
+   scenario modules, tests/test_demo_attacks.py), never the injected text. ~~**Live demo shows that an attack was stopped, not what it wanted.** The worst-case run ends with "Done." and one
    table row. Add a short "What the attacker tried" callout above the findings: a safe, truncated excerpt of the
-   quarantined text (never the raw payload into the audit log) and "Without FlowGuard: the agent would have …". (M)
-5. **Live demo: 24 s of silence, result below the fold.** Stream the steps as they happen (tokenized ✓ →
+   quarantined text (never the raw payload into the audit log) and "Without FlowGuard: the agent would have …". (M)~~
+5. **Fixed:** steps stream in from the audit stream (Try it takes a session id), the page scrolls to the result,
+   five per-run tiles, one duration split into model / checks / AI check. ~~**Live demo: 24 s of silence, result below the fold.** Stream the steps as they happen (tokenized ✓ →
    get_client_file ✓ → injection check 0.91 → quarantined) and scroll to the result. Tiles that count only this run:
    Hidden / Quarantined / Withheld / Stopped / Released (today "Actions stopped 0" while an injection was quarantined).
-   One duration ("24252 ms" in the header vs "37 checks in 12354 ms"). (M)
+   One duration ("24252 ms" in the header vs "37 checks in 12354 ms"). (M)~~
 6. **Audit: policy reloads bury agent activity.** Default to agent activity, or collapse unchanged reloads into one row
    ("Policy reloaded ×6, no changes"). Policy changes need an author (dashboard / file edit). Humanise the diff
    ("Date-of-birth protection: added, Redact"), not `null → {"action":"redact"}`. (S/M)

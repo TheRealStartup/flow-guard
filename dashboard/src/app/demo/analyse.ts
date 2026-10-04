@@ -21,7 +21,13 @@ function finding(d: Decision): Finding {
   const label = found ? { CARD: "Card number", IBAN: "IBAN", PESEL: "National ID (PESEL)", PASSPORT: "Passport number", DOB: "Date of birth", SECRET: "Secret" }[found] ?? found : controlName(d.control);
 
   if (d.control === "injection.jev" && d.action === "redact")
-    return { ...base, found: "Text with hidden instructions", decision: `Quarantined${d.score != null ? ` (p = ${d.score.toFixed(2)})` : ""}`, tone: "block", sawInstead: "Content removed: suspected prompt injection" };
+    return {
+      ...base,
+      found: "Text with hidden instructions",
+      decision: `Quarantined${d.score != null ? ` · ${Math.round(d.score * 100)}% likely injection` : ""}`,
+      tone: "block",
+      sawInstead: "Content removed: suspected prompt injection",
+    };
   if (d.control === "barrier.mnpi")
     return { ...base, found: "Restricted deal content", decision: "Withheld", tone: "block", sawInstead: "“Some results are outside your access.”" };
   if (d.control === "classification")
@@ -33,12 +39,12 @@ function finding(d: Decision): Finding {
       sawInstead: d.action === "block" ? "Nothing: the gateway answered itself" : "“Some results are outside your access.”",
     };
   if (d.action === "redact")
-    return { ...base, found: label, decision: "Tokenized", tone: "redact", sawInstead: d.token ?? tokenIn(d.excerpt, found) ?? "Reversible token" };
+    return { ...base, found: label, decision: "Hidden", tone: "redact", sawInstead: d.token ?? tokenIn(d.excerpt, found) ?? "Reversible token" };
   if (d.control === "pii.detokenize")
-    return { ...base, found: "Token for a real value", decision: "Released to approved tool", tone: "flag", sawInstead: "Real value put back for this tool only" };
+    return { ...base, found: "Token for a real value", decision: "Released to an approved tool", tone: "neutral", sawInstead: "Real value put back for this tool only" };
   if (d.action === "block") {
     const call = d.where.startsWith("tool_call:") ? d.where.slice(10) : null;
-    const decision = d.control.startsWith("flow.") ? "Blocked before it left" : call ? "Stopped before it ran" : "Blocked";
+    const decision = d.control.startsWith("flow.") ? "Blocked before it left" : call ? "Blocked before it ran" : "Blocked";
     return { ...base, found: call ? `${call} call` : controlName(d.control), decision, tone: "block", sawInstead: "—" };
   }
   return { ...base, found: label, decision: "Flagged", tone: "flag", sawInstead: "Passed unchanged, recorded" };
@@ -80,23 +86,33 @@ export function analyse(r: TryResult) {
   const verdict: { tone: Tone; title: string } = flowBlock
     ? { tone: "block", title: "Blocked before it left" }
     : stopped
-      ? { tone: "block", title: "Stopped before it ran" }
+      ? { tone: "block", title: "Blocked before it ran" }
       : denied
-        ? { tone: "block", title: "Denied at the door" }
+        ? { tone: "block", title: "Blocked at the door" }
         : hidden || quarantined || withheld
           ? { tone: "redact", title: "Removed before the model saw it" }
           : released.length
-            ? { tone: "flag", title: "Released only to an approved tool" }
+            ? { tone: "neutral", title: "Released only to an approved tool" }
             : { tone: "allow", title: "Passed: nothing sensitive found" };
 
   const parts = [
     hidden && `${hidden} value${hidden === 1 ? "" : "s"} hidden from the model`,
     quarantined && `${quarantined} message${quarantined === 1 ? "" : "s"} quarantined`,
     withheld && `${withheld} restricted item${withheld === 1 ? "" : "s"} withheld`,
-    stopped && `${stopped} action${stopped === 1 ? "" : "s"} stopped`,
+    stopped && `${stopped} action${stopped === 1 ? "" : "s"} blocked`,
     released.length && `${released.length} real value${released.length === 1 ? "" : "s"} released to ${[...new Set(released)].join(", ")}`,
     leftOrg.length ? `sent outside via ${leftOrg.join(", ")}` : "nothing left the organisation",
   ].filter(Boolean) as string[];
+
+  // Requests blocked outright (not a tool call): a denied key, the purpose rule, a data class, the budget.
+  const requestBlocks = decisions.filter((d) => d.action === "block" && !d.where.startsWith("tool_call:")).length + (denied && !denied.acl?.decisions?.length ? 1 : 0);
+  const accs = r.steps.flatMap((s) => (s.kind !== "tool" && s.acl ? [s.acl] : []));
+  const timing = {
+    checks: accs.reduce((t, x) => t + (x.controls_ms ?? 0), 0),
+    model: accs.reduce((t, x) => t + (x.upstream_ms ?? 0), 0),
+    judge: decisions.filter((d) => d.control === "injection.jev").reduce((t, d) => t + d.ms, 0),
+  };
+  const attackCaught = accs.some((x) => x.threats?.length);
 
   const last = [...r.steps].reverse().find((s) => s.kind === "model" && s.content);
   const answer = last?.kind === "model" ? last.content : null;
@@ -110,7 +126,11 @@ export function analyse(r: TryResult) {
     withheld,
     answerRedacted,
     stopped,
+    blocked: stopped + requestBlocks,
     released,
+    timing,
+    attackCaught,
+    attacks: r.attacks ?? [],
     leftOrg,
     verdict,
     summary: parts.join(" · "),

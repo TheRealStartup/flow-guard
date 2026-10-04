@@ -5,6 +5,7 @@ with the chosen demo user's API key, so identity and every control apply. Nothin
 
 import importlib
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -25,6 +26,7 @@ def dev_keys() -> dict[str, str]:
             for line in path.read_text().splitlines() if line.startswith("ACL_KEY_")}
 
 
+SESSION_RE = re.compile(r"^try-[a-z0-9-]{4,48}$")  # a session id the dashboard may choose, to follow the run live
 SCENARIOS = {"support": "world", "onboarding": "onboarding", "developer": "developer", "hr": "hr"}  # name -> module in demo/
 
 
@@ -45,11 +47,24 @@ def _preview(app, tool: str, result: str) -> str:
     return safe_excerpt(result, width=300)
 
 
+def _attacks(world, calls: list[tuple[str, dict[str, Any]]], caught: bool) -> list[dict[str, str]]:
+    """What the run's poisoned sources wanted, in the scenario's own hand-written words (never the injected text).
+    Only when the run caught an attack, and only for poisoned sources the agent actually read."""
+    if not caught:
+        return []
+    out = []
+    for a in getattr(world, "ATTACKS", []):
+        if any(name == a["tool"] and a["arg"] in [str(v) for v in args.values()] + list(args.values()) for name, args in calls):
+            out.append({"where": a["where"], "source": f"{a['tool']} {a['arg']}", "wants": a["wants"]})
+    return out
+
+
 async def run(app, user: str, prompt: str, model: str, scenario: str = "support", max_steps: int = 6,
-              purpose: str = "dashboard try-it") -> dict[str, Any]:
+              purpose: str = "dashboard try-it", session: str | None = None) -> dict[str, Any]:
     world = _world(scenario)
     key = dev_keys().get(user, "")
-    sid = f"try-{user}-{uuid.uuid4().hex[:6]}"
+    sid = session if session and SESSION_RE.match(session) else f"try-{user}-{uuid.uuid4().hex[:6]}"
+    calls: list[tuple[str, dict[str, Any]]] = []  # tool calls that ran: (name, arguments)
     headers = {"Authorization": f"Bearer {key}", "X-Session": sid, "X-Purpose": purpose or "dashboard try-it"}
     messages: list[dict[str, Any]] = [{"role": "system", "content": world.SYSTEM}, {"role": "user", "content": prompt}]
     steps: list[dict[str, Any]] = []
@@ -71,9 +86,13 @@ async def run(app, user: str, prompt: str, model: str, scenario: str = "support"
             if not msg.get("tool_calls"):
                 break
             for tc in msg["tool_calls"]:
-                result = world.run_tool(tc["function"]["name"], json.loads(tc["function"]["arguments"] or "{}"))
+                args = json.loads(tc["function"]["arguments"] or "{}")
+                calls.append((tc["function"]["name"], args if isinstance(args, dict) else {}))
+                result = world.run_tool(tc["function"]["name"], args)
                 # The raw result goes back to the agent (the model only ever sees it redacted). The dashboard
                 # gets a masked preview: the reporting UI must not become a leak of its own.
                 steps.append({"kind": "tool", "name": tc["function"]["name"], "result_preview": _preview(app, tc["function"]["name"], result)})
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-    return {"session": sid, "user": user, "scenario": scenario, "model": model, "steps": steps}
+    caught = any((s.get("acl") or {}).get("threats") for s in steps)
+    return {"session": sid, "user": user, "scenario": scenario, "model": model, "steps": steps,
+            "attacks": _attacks(world, calls, caught)}

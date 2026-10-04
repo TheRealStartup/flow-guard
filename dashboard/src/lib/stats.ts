@@ -1,8 +1,22 @@
-import type { AuditEvent, ExchangeEvent, Outcome } from "./api";
+import type { AuditEvent, Counts, ExchangeEvent, Verdict } from "./api";
 
 // Everything the Overview shows, computed from the audit events of one time range, so every number agrees.
 
-export const OUTCOMES: Outcome[] = ["allowed", "redacted", "flagged", "blocked"]; // stack order, bottom → top
+// Chart series, stack order bottom → top. Each groups the gateway's verdicts (one per request), so the series add up
+// to the requests and match the tiles: "stopped" = Attacks caught + Blocked.
+export type Series = "allowed" | "flagged" | "hidden" | "stopped";
+export const OUTCOMES: Series[] = ["allowed", "flagged", "hidden", "stopped"];
+export const SERIES_LABEL: Record<Series, string> = { stopped: "Attack caught or blocked", hidden: "Hidden or withheld", flagged: "Flagged", allowed: "Allowed" };
+const SERIES: Record<string, Series> = {
+  attack: "stopped",
+  blocked: "stopped",
+  quarantined: "stopped",
+  withheld: "hidden",
+  hidden: "hidden",
+  flagged: "flagged",
+  released: "allowed",
+  allowed: "allowed",
+};
 
 export const RANGES = [
   { value: "15m", label: "15 min", seconds: 15 * 60, bucket: 60 },
@@ -17,7 +31,7 @@ const VALUE_CONTROLS = new Set(["pii.card", "pii.iban", "pii.pesel", "pii.passpo
 const JUDGE = "injection.jev";
 export const NO_IDENTITY = "unknown"; // requests denied before an API key resolved to a user
 
-export type Bucket = { start: number; counts: Record<Outcome, number>; total: number };
+export type Bucket = { start: number; counts: Record<Series, number>; total: number };
 export type ControlRow = { control: string; block: number; redact: number; flag: number; total: number };
 export type ActorRow = { user: string; agents: string[]; requests: number; blocked: number; redacted: number; flagged: number; topControl: string | null; last: number; labels: string[] };
 
@@ -29,26 +43,55 @@ function quantile(xs: number[], q: number): number | null {
   return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo);
 }
 
+/** The gateway's verdict and counts for an exchange (gateway/acl/report.py), with a fallback for entries without them. */
+function verdictOf(e: ExchangeEvent): Verdict {
+  if (e.summary) return e.summary.verdict;
+  if (e.threats?.length) return "attack";
+  return ({ blocked: "blocked", redacted: "hidden", flagged: "flagged", allowed: "allowed" } as const)[e.outcome];
+}
+function countsOf(e: ExchangeEvent): Counts {
+  if (e.summary?.counts) return e.summary.counts;
+  const c = { hidden: 0, quarantined: 0, withheld: 0, released: 0, blocked: e.outcome === "blocked" ? 1 : 0 };
+  for (const d of e.decisions) {
+    if (d.action === "redact" && VALUE_CONTROLS.has(d.control)) c.hidden++;
+    else if (d.control === JUDGE && d.action === "redact") c.quarantined++;
+    else if (d.action === "redact" && (d.control === "barrier.mnpi" || d.control === "classification")) c.withheld++;
+    else if (d.control === "pii.detokenize") c.released++;
+  }
+  return c;
+}
+const zero = () => Object.fromEntries(OUTCOMES.map((o) => [o, 0])) as Record<Series, number>;
+
 function summarise(ex: ExchangeEvent[]) {
-  const counts = Object.fromEntries(OUTCOMES.map((o) => [o, 0])) as Record<Outcome, number>;
-  let hidden = 0;
-  let quarantined = 0;
-  let released = 0;
-  let flowBlocks = 0;
-  let attacks = 0;
+  const counts = zero();
+  const verdicts: Partial<Record<Verdict, number>> = {};
+  const values = { hidden: 0, quarantined: 0, withheld: 0, released: 0 };
   const attackKinds: Record<string, number> = {};
+  const blockedBy: Record<string, number> = {};
   for (const e of ex) {
-    counts[e.outcome]++;
-    if (e.threats?.length) attacks++;
-    for (const t of new Set(e.threats ?? [])) attackKinds[t] = (attackKinds[t] ?? 0) + 1;
-    for (const d of e.decisions) {
-      if (d.action === "redact" && VALUE_CONTROLS.has(d.control)) hidden++;
-      if ((d.control === JUDGE && d.action !== "allow" && d.action !== "flag") || (d.control === "barrier.mnpi" && d.action === "redact")) quarantined++;
-      if (d.control === "pii.detokenize") released++;
-      if (d.control.startsWith("flow.") && d.action === "block") flowBlocks++;
+    const v = verdictOf(e);
+    verdicts[v] = (verdicts[v] ?? 0) + 1;
+    counts[SERIES[v] ?? "allowed"]++;
+    const c = countsOf(e);
+    values.hidden += c.hidden;
+    values.quarantined += c.quarantined;
+    values.withheld += c.withheld;
+    values.released += c.released;
+    if (v === "attack") for (const t of new Set(e.threats ?? [])) attackKinds[t] = (attackKinds[t] ?? 0) + 1;
+    if (v === "blocked") {
+      const by = e.summary?.control ?? e.decisions.find((d) => d.action === "block")?.control ?? "other";
+      blockedBy[by] = (blockedBy[by] ?? 0) + 1;
     }
   }
-  return { requests: ex.length, counts, hidden, quarantined, released, flowBlocks, attacks, attackKinds };
+  return {
+    requests: ex.length,
+    counts,
+    attacks: (verdicts.attack ?? 0) + (verdicts.quarantined ?? 0), // requests where an attack was caught
+    blocked: verdicts.blocked ?? 0, // requests stopped for another reason (scope, role, budget, identity, data class)
+    ...values,
+    attackKinds,
+    blockedBy,
+  };
 }
 
 export function computeOverview(events: AuditEvent[], range: RangeKey, now: number) {
@@ -62,11 +105,11 @@ export function computeOverview(events: AuditEvent[], range: RangeKey, now: numb
   const first = Math.floor(from / r.bucket) * r.bucket;
   const buckets: Bucket[] = [];
   for (let t = first; t <= now; t += r.bucket)
-    buckets.push({ start: t, counts: Object.fromEntries(OUTCOMES.map((o) => [o, 0])) as Record<Outcome, number>, total: 0 });
+    buckets.push({ start: t, counts: zero(), total: 0 });
   for (const e of ex) {
     const b = buckets[Math.floor((e.ts - first) / r.bucket)];
     if (!b) continue;
-    b.counts[e.outcome]++;
+    b.counts[SERIES[verdictOf(e)] ?? "allowed"]++;
     b.total++;
   }
 
@@ -74,7 +117,7 @@ export function computeOverview(events: AuditEvent[], range: RangeKey, now: numb
   const controls = new Map<string, ControlRow>();
   for (const e of ex)
     for (const d of e.decisions) {
-      if (d.action === "allow") continue;
+      if (d.action === "allow" || d.control === "pii.detokenize") continue; // a release is not a catch
       const row = controls.get(d.control) ?? { control: d.control, block: 0, redact: 0, flag: 0, total: 0 };
       row[d.action]++;
       row.total++;
@@ -96,9 +139,10 @@ export function computeOverview(events: AuditEvent[], range: RangeKey, now: numb
     const key = e.user ?? NO_IDENTITY;
     const a = actors.get(key) ?? { user: key, agents: [], requests: 0, blocked: 0, redacted: 0, flagged: 0, topControl: null, last: 0, labels: [] };
     a.requests++;
-    if (e.outcome === "blocked") a.blocked++;
-    if (e.outcome === "redacted") a.redacted++;
-    if (e.outcome === "flagged") a.flagged++;
+    const series = SERIES[verdictOf(e)];
+    if (series === "stopped") a.blocked++;
+    if (series === "hidden") a.redacted++;
+    if (series === "flagged") a.flagged++;
     if (e.agent && !a.agents.includes(e.agent)) a.agents.push(e.agent);
     for (const l of e.usage?.labels ?? []) if (!a.labels.includes(l)) a.labels.push(l);
     a.last = Math.max(a.last, e.ts);
@@ -129,7 +173,7 @@ export function computeOverview(events: AuditEvent[], range: RangeKey, now: numb
     agents: new Set(ex.map((e) => e.agent).filter(Boolean)).size,
     // Newest first whatever order the feed delivers: stopped attacks and blocks.
     recentBlocks: ex
-      .filter((e) => e.outcome === "blocked" || e.threats?.length)
+      .filter((e) => SERIES[verdictOf(e)] === "stopped")
       .sort((a, b) => b.seq - a.seq)
       .slice(0, 6),
     sparkline: buckets.slice(-12).map((b) => b.total),
