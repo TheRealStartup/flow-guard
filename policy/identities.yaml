@@ -9,4 +9,4 @@ identities:
   - {user: hana, agent: hr-assistant, key_sha256: e6d89112622c2513d1f4c02689ae7421715c2d7121bbbcdda839d5944b1313c7}
   - {user: devon, agent: coding-assistant,key_sha256: d0e537f1f360624f1ee0c86c1aba84412948e23e72208bc1398b5be0e014cdf7}
   # Claude Code itself (unmodified), via ANTHROPIC_BASE_URL. It cannot send X-Purpose, so the key carries one.
-  - {user: devon, agent: claude-code, purpose: "fix the fx-rates-service tests", key_sha256: 03ffb812126571257388be623f2b93a190b53ea301909960c7a539f4d5addb3a}
+  - {user: devon, agent: claude-code, purpose: "debug the payments-service", key_sha256: 03ffb812126571257388be623f2b93a190b53ea301909960c7a539f4d5addb3a}

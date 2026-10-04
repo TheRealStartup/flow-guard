@@ -15,7 +15,7 @@ from acl.adapters.anthropic import to_anthropic, to_openai
 CC_KEY = next(line.split("=", 1)[1].strip() for line in (ROOT / "demo" / "dev-keys.env").read_text().splitlines()
               if line.startswith("ACL_CLAUDE_CODE_KEY="))
 SECRET = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
-CWD = "/tmp/fx-rates-service"
+CWD = "/tmp/flowguard-demo/payments-service"
 REMINDER = "<system-reminder>\nAttribution for git commits: Co-Authored-By: Claude Code\n</system-reminder>\n"
 SYSTEM = [{"type": "text", "text": "x-anthropic-billing-header: cc_version=2.1"},
           {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}},
@@ -96,7 +96,7 @@ def test_claude_code_is_devons_agent_with_the_keys_purpose_and_its_own_session(g
     r = post(gw, [user("hi")], session="abc")
     acl = r.json()["acl"]
     assert r.status_code == 200 and (acl["user"], acl["agent"], acl["session"]) == ("devon", "claude-code", "devon-abc")
-    assert gw.app.state.engine.sessions["devon-abc"].purpose == "fix the fx-rates-service tests"
+    assert gw.app.state.engine.sessions["devon-abc"].purpose == "debug the payments-service"
 
 
 def test_x_api_key_works_and_a_bad_key_is_denied_in_anthropic_format(gw):
