@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, FileCode2, History, KeyRound, Radio, RefreshCw, Route, ShieldAlert, TriangleAlert, Users, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { History, Radio, RefreshCw, Route, TriangleAlert, X } from "lucide-react";
 import { usePoll, type Action, type ControlConfig, type PolicyChange } from "@/lib/api";
 import { useAuditEvents, useOnPolicyChange, usePolicyLive } from "@/lib/stream";
-import { CONTROLS, OWASP, OWASP_LLM, utcDate, utcTime } from "@/lib/format";
+import { CONTROLS, OWASP, OWASP_LLM, utcTime } from "@/lib/format";
 import { ActionPill, Panel, PanelHeader, Pill, SectionLabel } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -254,45 +254,13 @@ export default function PoliciesPage() {
       </Panel>
 
       {d && (
-        <>
-          <div className="mb-6 grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <RolesAndPeople d={d} />
-            <div className="flex flex-col gap-6">
-              <Sinks d={d} />
-              <ScopesAndBarriers d={d} />
-            </div>
-          </div>
-          <div className="mb-6 grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-3">
-            <Models d={d} />
-            <Budgets d={d} />
-            <Signatures d={d} />
-          </div>
-        </>
+        <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-2">
+          <Sinks d={d} />
+          <Models d={d} />
+          <Budgets d={d} />
+          <Signatures d={d} />
+        </div>
       )}
-
-      <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <Panel>
-          <PanelHeader icon={<History className="size-5" />} title="Change history" count={history?.length ?? "…"} />
-          <ul className="max-h-[480px] divide-y overflow-y-auto">
-            {(history ?? []).map((h, i) => (
-              <li key={i} className="px-6 py-3">
-                <div className="flex items-baseline gap-2 font-mono text-xs text-muted-foreground">
-                  <span className={cn("text-sm", h.error ? "text-block" : "text-foreground")}>{h.error ? "Rejected edit" : h.previous ? h.version : `Loaded ${h.version}`}</span>
-                  <span>· {h.profile}</span>
-                  {h.ts && (
-                    <span className="ml-auto">
-                      {utcDate(h.ts)} {utcTime(h.ts, false)}
-                    </span>
-                  )}
-                </div>
-                {h.error ? <div className="mt-1 text-sm break-words text-block">{h.error}</div> : <ChangeList changes={h.changes} className="mt-1" />}
-              </li>
-            ))}
-            {history && !history.length && <li className="px-6 py-6 text-muted-foreground">No reloads recorded.</li>}
-          </ul>
-        </Panel>
-        <RawYaml version={d?.version} />
-      </div>
     </>
   );
 }
@@ -335,73 +303,6 @@ function ProfilePreview({ d, profile, onClose }: { d: Details; profile: string; 
   );
 }
 
-function RolesAndPeople({ d }: { d: Details }) {
-  const external = new Set(d.sinks.external ?? []);
-  const detok = new Set(d.sinks.detokenize ?? []);
-  const agentOf = (u: string) => d.identity.keys.filter((k) => k.user === u).map((k) => k.agent);
-  return (
-    <Panel className="overflow-hidden">
-      <PanelHeader icon={<Users className="size-5" />} title="Who may do what" count={`${Object.keys(d.users).length} users`}>
-        <span className="text-sm text-muted-foreground">
-          identity: {d.identity.mode === "api_key" ? "API key per user and agent" : "header (dev only)"}
-          {d.identity.require_purpose ? " · purpose required" : ""}
-        </span>
-      </PanelHeader>
-      <table className="w-full text-left text-[15px]">
-        <thead className="border-b bg-muted text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          <tr>
-            <th className="py-3 pl-6">User · agent</th>
-            <th className="py-3">Role</th>
-            <th className="py-3">Scope</th>
-            <th className="py-3 pr-6">Allowed tools</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(d.users).map(([u, info]) => (
-            <tr key={u} className="border-b align-top last:border-b-0">
-              <td className="py-3 pl-6">
-                <div className="font-mono text-sm">{u}</div>
-                <div className="font-mono text-xs text-muted-foreground">{agentOf(u).join(", ") || "no API key"}</div>
-              </td>
-              <td className="py-3 pr-3 font-mono text-sm">{info.role}</td>
-              <td className="py-3 pr-3 text-sm text-muted-foreground">
-                {[info.side && `${info.side} side`, info.assigned_clients?.length && `clients ${info.assigned_clients.join(", ")}`, info.deals && `cleared for ${info.deals} restricted deal${info.deals === 1 ? "" : "s"}`]
-                  .filter(Boolean)
-                  .join(" · ") || "—"}
-              </td>
-              <td className="py-3 pr-6">
-                <div className="flex flex-wrap gap-1">
-                  {(d.roles[info.role]?.tools ?? []).map((t) => (
-                    <span
-                      key={t}
-                      title={external.has(t) ? "External sink: data leaves the organisation" : detok.has(t) ? "Gets real values back" : undefined}
-                      className={cn(
-                        "rounded px-1.5 py-0.5 font-mono text-xs",
-                        external.has(t) ? "bg-block-soft text-block" : detok.has(t) ? "bg-flag-soft text-flag" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="flex flex-wrap gap-x-5 gap-y-1 border-t bg-muted px-6 py-3 text-sm text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <span className="size-2.5 rounded-[3px] bg-block" /> external sink
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="size-2.5 rounded-[3px] bg-flag-mark" /> receives real values
-        </span>
-        <span>An agent gets exactly its user&apos;s role, never more.</span>
-      </div>
-    </Panel>
-  );
-}
-
 function Sinks({ d }: { d: Details }) {
   return (
     <Panel>
@@ -428,34 +329,6 @@ function Sinks({ d }: { d: Details }) {
             ))}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">Only these tools get the card number, IBAN or passport back; everything else sees tokens.</p>
-        </div>
-      </div>
-    </Panel>
-  );
-}
-
-function ScopesAndBarriers({ d }: { d: Details }) {
-  return (
-    <Panel>
-      <PanelHeader icon={<ShieldAlert className="size-5" />} title="Scopes and barriers" />
-      <div className="flex flex-col gap-4 px-6 py-5 text-[15px]">
-        <div>
-          <SectionLabel className="mb-1">Argument scopes</SectionLabel>
-          {Object.entries(d.scopes).map(([tool, s]) => (
-            <div key={tool} className="font-mono text-sm">
-              {tool}({s.argument}) <span className="text-muted-foreground">only for the user&apos;s</span> {s.user_field}
-            </div>
-          ))}
-          <p className="mt-1 text-sm text-muted-foreground">Out of scope: the call never runs.</p>
-        </div>
-        <div>
-          <SectionLabel className="mb-1">Information barrier</SectionLabel>
-          <div className="text-sm">
-            {d.barriers.restricted.length} restricted deal{d.barriers.restricted.length === 1 ? "" : "s"} ({d.barriers.restricted.map((r) => `${r.terms} matching terms`).join(", ")})
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The public side gets “{d.barriers.public_message}”. Deal names and codenames are never shown here: naming them would leak them.
-          </p>
         </div>
       </div>
     </Panel>
@@ -523,40 +396,6 @@ function Signatures({ d }: { d: Details }) {
           </li>
         ))}
       </ul>
-    </Panel>
-  );
-}
-
-function RawYaml({ version }: { version?: string }) {
-  const [open, setOpen] = useState(false);
-  const [data, setData] = useState<string | null>(null);
-  // Plain text, not JSON; refetched whenever the version changes while the file is shown.
-  useEffect(() => {
-    if (!open) return;
-    let stale = false;
-    fetch("/api/policy/raw", { cache: "no-store" })
-      .then((r) => r.text())
-      .then((t) => !stale && setData(t))
-      .catch(() => !stale && setData("Could not load the file from the gateway."));
-    return () => {
-      stale = true;
-    };
-  }, [open, version]);
-  return (
-    <Panel>
-      <PanelHeader icon={<FileCode2 className="size-5" />} title="policy.yaml">
-        <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent" aria-expanded={open}>
-          {open ? "Hide" : "Show file"} <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
-        </button>
-      </PanelHeader>
-      {open ? (
-        <pre className="max-h-[480px] overflow-auto px-6 py-4 font-mono text-xs leading-relaxed whitespace-pre">{data ?? "Loading…"}</pre>
-      ) : (
-        <div className="flex items-center gap-3 px-6 py-5 text-sm text-muted-foreground">
-          <KeyRound className="size-4 shrink-0" />
-          The file as the gateway reads it. Edits apply within about a second, and every audit entry names the version that decided it.
-        </div>
-      )}
     </Panel>
   );
 }
