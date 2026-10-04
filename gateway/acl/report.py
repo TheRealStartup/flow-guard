@@ -138,7 +138,7 @@ def explain(d: dict[str, Any], user: str | None = None) -> tuple[str, str]:
     if c == "classification":
         if "was not sent to any model" in r:
             return ("Blocked: request names restricted content",
-                    "The request itself names content above this user's access. It was answered with a neutral message "
+                    "The request names content that may not go to this model. It was answered with a neutral message "
                     "and not sent to any model.")
         m = re.match(r"(\S+) returns (\S+) data, above the (\S+) limit for model (\S+)", r)
         if m:

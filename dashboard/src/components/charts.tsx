@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { Outcome } from "@/lib/api";
-import { OUTCOME_LABEL, controlName } from "@/lib/format";
-import { OUTCOMES, niceMax, type Bucket, type ControlRow } from "@/lib/stats";
+import { controlName } from "@/lib/format";
+import { OUTCOMES, SERIES_LABEL, niceMax, type Bucket, type ControlRow, type Series } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
 // Plain HTML/SVG charts in the dashboard's palette. Mark specs: bars ≤ 24px, 4px rounded data-end, 2px surface gaps,
 // hairline grid, hover tooltip on every mark, legend for ≥ 2 series. Text always uses text tokens, never mark colors.
 
-export const MARK: Record<Outcome, string> = {
+export const MARK: Record<Series, string> = {
   allowed: "var(--allow)",
-  redacted: "var(--redact)",
+  hidden: "var(--redact)",
   flagged: "var(--flag-mark)",
-  blocked: "var(--block)",
+  stopped: "var(--block)",
 };
 export const ACTION_MARK = { block: "var(--block)", redact: "var(--redact)", flag: "var(--flag-mark)" } as const;
 
@@ -52,7 +51,7 @@ function Tooltip({ tip }: { tip: Tip }) {
   );
 }
 
-/** Requests per time bucket, stacked by outcome. */
+/** Requests per time bucket, stacked by verdict group. */
 export function OutcomeColumns({ buckets, label, height = 220 }: { buckets: Bucket[]; label: (b: Bucket) => string; height?: number }) {
   const [tip, setTip] = useState<Tip>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -93,7 +92,7 @@ export function OutcomeColumns({ buckets, label, height = 220 }: { buckets: Buck
                     title: label(b),
                     rows: [
                       { label: "requests", value: String(b.total) },
-                      ...[...OUTCOMES].reverse().map((o) => ({ label: OUTCOME_LABEL[o].toLowerCase(), value: String(b.counts[o]), color: MARK[o] })),
+                      ...[...OUTCOMES].reverse().map((o) => ({ label: SERIES_LABEL[o].toLowerCase(), value: String(b.counts[o]), color: MARK[o] })),
                     ],
                   });
                 }}
@@ -149,7 +148,7 @@ export function ControlBars({ rows, limit = 8 }: { rows: ControlRow[]; limit?: n
                 x: e.clientX - box.left,
                 y: e.currentTarget.getBoundingClientRect().top - box.top,
                 title: `${controlName(r.control)} · ${r.control}`,
-                rows: parts.map((k) => ({ label: { block: "blocked", redact: "redacted", flag: "flagged" }[k], value: String(r[k]), color: ACTION_MARK[k] })),
+                rows: parts.map((k) => ({ label: { block: "blocked", redact: "hidden or quarantined", flag: "flagged" }[k], value: String(r[k]), color: ACTION_MARK[k] })),
               });
             }}
           >

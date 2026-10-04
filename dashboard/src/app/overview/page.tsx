@@ -5,10 +5,10 @@ import Link from "next/link";
 import { ArrowRight, Gauge, Radio, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
 import { usePoll, type Health, type Verify } from "@/lib/api";
 import { useAuditEvents } from "@/lib/stream";
-import { CONTROLS, OUTCOME_LABEL, controlName, eventId, shortHash, utcDate, utcTime } from "@/lib/format";
-import { NO_IDENTITY, OUTCOMES, RANGES, compact, computeOverview, ms, type Bucket, type Overview, type RangeKey } from "@/lib/stats";
-import { ControlBars, Legend, MARK, ACTION_MARK, Meter, OutcomeColumns, Sparkline } from "@/components/charts";
-import { PageHeader, Panel, PanelHeader, Pill, SectionLabel } from "@/components/kit";
+import { CONTROLS, controlName, eventId, shortHash, utcDate, utcTime } from "@/lib/format";
+import { NO_IDENTITY, OUTCOMES, RANGES, SERIES_LABEL, compact, computeOverview, ms, type Bucket, type Overview, type RangeKey } from "@/lib/stats";
+import { ControlBars, Legend, MARK, ACTION_MARK, Meter, OutcomeColumns } from "@/components/charts";
+import { InfoTip, PageHeader, Panel, PanelHeader, Pill, SectionLabel } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
 type Metrics = {
@@ -92,7 +92,7 @@ export default function OverviewPage() {
               <TableToggle o={o} />
             </PanelHeader>
             <div className="px-6 pt-4 pb-5">
-              <Legend items={[...OUTCOMES].reverse().map((k) => ({ label: OUTCOME_LABEL[k], color: MARK[k], value: o.now.counts[k] }))} />
+              <Legend items={[...OUTCOMES].reverse().map((k) => ({ label: SERIES_LABEL[k], color: MARK[k], value: o.now.counts[k] }))} />
               <div className="mt-5">
                 {o.now.requests ? <OutcomeColumns buckets={o.buckets} label={(b) => bucketLabel(b, o)} /> : <Empty text={`No requests in the last ${o.range.label}.`} />}
               </div>
@@ -103,9 +103,10 @@ export default function OverviewPage() {
 
         <div className="mb-6 grid grid-cols-1 gap-6 [&>*]:min-w-0 xl:grid-cols-2">
           <Panel>
-            <PanelHeader title="What the controls caught" count={o.controls.reduce((s, r) => s + r.total, 0)} />
+            <PanelHeader title="What each control did" count={`${o.controls.reduce((s, r) => s + r.total, 0)} decisions`} />
             <div className="px-6 pt-4 pb-5">
-              <Legend items={[{ label: "Blocked", color: ACTION_MARK.block }, { label: "Redacted", color: ACTION_MARK.redact }, { label: "Flagged", color: ACTION_MARK.flag }]} />
+              <Legend items={[{ label: "Blocked", color: ACTION_MARK.block }, { label: "Hidden or quarantined", color: ACTION_MARK.redact }, { label: "Flagged", color: ACTION_MARK.flag }]} />
+              <p className="mt-2 text-sm text-muted-foreground">Counts decisions, not requests: one request can hide several values.</p>
               <div className="mt-5">{o.controls.length ? <ControlBars rows={o.controls} /> : <Empty text="No control has fired in this range." />}</div>
             </div>
           </Panel>
@@ -139,55 +140,87 @@ export default function OverviewPage() {
   );
 }
 
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const BLOCK_REASON: Record<string, string> = {
+  "access.scope": "outside scope",
+  "access.tools": "role",
+  "access.purpose": "purpose",
+  "access.datalake": "data lake",
+  budget: "budget",
+  identity: "no valid key",
+  classification: "data class",
+  "models.allowlist": "model",
+};
+
 function Tiles({ o }: { o: Overview }) {
   const { now, before } = o;
-  const pct = (n: number) => (now.requests ? `${Math.round((n / now.requests) * 100)}%` : "0%");
+  // A change against an empty previous period says nothing (the gateway just started): leave it out.
   const delta = (a: number, b: number) => {
+    if (!before.requests) return null;
     const d = a - b;
     return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)} vs previous ${o.range.label}`;
   };
+  const blockedBy = Object.entries(now.blockedBy)
+    .sort((a, b) => b[1] - a[1])
+    .map(([c, n]) => `${n} ${BLOCK_REASON[c] ?? controlName(c).toLowerCase()}`)
+    .join(" · ");
   const p95 = o.latency.rulesP95;
   return (
-    <div className="mb-6 grid grid-cols-2 overflow-hidden rounded-lg border bg-card xl:grid-cols-4 xl:divide-x">
-      <Tile label="Requests checked" value={compact(now.requests)} note={`${o.actors.length} users · ${o.agents} agents`} sub={delta(now.requests, before.requests)} trend={<Sparkline values={o.sparkline} />} />
+    <div className="mb-6 grid grid-cols-2 overflow-hidden rounded-lg border bg-card lg:grid-cols-3 xl:grid-cols-5 xl:divide-x">
       <Tile
-        label="Attacks stopped"
+        label="Requests checked"
+        info="Every request an agent sent through FlowGuard: prompts, tool results on their way to the model, and refused requests."
+        value={compact(now.requests)}
+        note={`${plural(o.actors.length, "user")} · ${plural(o.agents, "agent")}`}
+        sub={delta(now.requests, before.requests)}
+      />
+      <Tile
+        label="Attacks caught"
+        info="Requests where a prompt injection, a known attack pattern or an attempt to send data out was caught. Each request counts once."
         mark="var(--block)"
         value={compact(now.attacks)}
-        note={Object.entries(now.attackKinds).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(" · ") || "none in this range"}
-        sub={`${now.counts.blocked} requests blocked (${pct(now.counts.blocked)}) · ${delta(now.attacks, before.attacks)}`}
+        note={Object.entries(now.attackKinds).map(([k, n]) => plural(n, k)).join(" · ") || "none in this range"}
+        sub={delta(now.attacks, before.attacks)}
+      />
+      <Tile
+        label="Blocked"
+        info="Requests stopped for a reason other than an attack: outside the user's scope or role, over budget, no valid API key, data class too high."
+        mark="var(--block)"
+        value={compact(now.blocked)}
+        note={blockedBy || "none in this range"}
+        sub="Not attacks: rules working as designed"
       />
       <Tile
         label="Data protected"
+        info="Values hidden: card numbers, IBANs, IDs, passports, dates of birth and secrets replaced with reversible tokens. Items withheld: restricted content kept back by the information barrier or the data classes."
         mark="var(--redact)"
-        value={compact(now.hidden)}
-        note={`values tokenized · ${now.quarantined} messages quarantined`}
-        sub={now.released ? `${now.released} real values released to approved tools` : "No real values released"}
+        value={compact(now.hidden + now.withheld)}
+        note={`${plural(now.hidden, "value")} hidden · ${plural(now.withheld, "item")} withheld`}
+        sub={now.released ? `${plural(now.released, "release")} of real values to approved tools` : "No real values released"}
       />
       <Tile
         label="Rule checks p95"
+        info="How long FlowGuard's own rule checks take per request (95th percentile). The AI injection check (Jev) is an outside service and is reported separately."
         mark={p95 != null && p95 > D3_TARGET_MS ? "var(--block)" : "var(--allow)"}
         value={ms(p95)}
         note={`target ${D3_TARGET_MS} ms · p50 ${ms(o.latency.rulesP50)}`}
-        sub={`AI judge avg ${ms(o.latency.judgeAvg)}, reported separately`}
+        sub={`AI injection check avg ${ms(o.latency.judgeAvg)}, separate`}
       />
     </div>
   );
 }
 
-function Tile({ label, value, note, sub, trend, mark }: { label: string; value: string; note: string; sub: string; trend?: React.ReactNode; mark?: string }) {
+function Tile({ label, info, value, note, sub, mark }: { label: string; info: string; value: string; note: string; sub: string | null; mark?: string }) {
   return (
     <div className="px-6 py-5">
       <div className="flex items-center gap-2 text-sm font-medium tracking-wide uppercase">
         {mark && <span className="size-2.5 rounded-[3px]" style={{ background: mark }} />}
         {label}
+        <InfoTip text={info} />
       </div>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <span className="text-[32px] leading-none font-semibold">{value}</span>
-        {trend}
-      </div>
+      <div className="mt-2 text-[32px] leading-none font-semibold tabular-nums">{value}</div>
       <div className="mt-3 text-[15px] text-muted-foreground">{note}</div>
-      <div className="mt-1 text-sm text-muted-foreground">{sub}</div>
+      {sub && <div className="mt-1 text-sm text-muted-foreground">{sub}</div>}
     </div>
   );
 }
@@ -217,7 +250,7 @@ function TableToggle({ o }: { o: Overview }) {
                   <th className="py-2 text-right font-normal">Requests</th>
                   {[...OUTCOMES].reverse().map((k) => (
                     <th key={k} className="py-2 text-right font-normal">
-                      {OUTCOME_LABEL[k]}
+                      {SERIES_LABEL[k]}
                     </th>
                   ))}
                 </tr>
@@ -264,7 +297,7 @@ function RecentBlocks({ o }: { o: Overview }) {
                 <span className="mt-1.5 size-2 shrink-0 rounded-full bg-block" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="truncate font-medium" title={s?.reason}>
+                    <span className="line-clamp-2 font-medium" title={s?.reason}>
                       {s?.headline ?? (d ? controlName(d.control) : "Blocked")}
                     </span>
                     <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{utcTime(e.ts, false)}</span>

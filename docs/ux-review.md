@@ -19,13 +19,14 @@ demo). This file is the work list. **Fixed** items are marked; everything else i
    detail and the Overview list show it. ~~**Rows name the next tool call, not what FlowGuard did** (/audit, /overview). "Get client file · Blocked" says
    nothing about the scope rule. Add a reason line: "Client scope: AC-7730 is not olivia's client", "Hidden
    instruction quarantined in the get_client_file result". Make the detail headline that sentence, not "Bash +1". (M)~~
-2. **One event, several labels.** The row says "Attack defused"; the detail badge for the same event says "Redacted"
+2. **Fixed:** one verdict per event from the gateway, same badge everywhere. ~~**One event, several labels.** The row says "Attack defused"; the detail badge for the same event says "Redacted"
    or "Blocked"; the tiles say "Attacks stopped" (Overview) and "Attacks defused" (Audit). One outcome set everywhere,
-   identical badge in row and detail (terminology table below). (S)
-3. **Overview numbers disagree.** In one 24 h view: 26 prompt injections (Attacks tile), 28 (What the controls
+   identical badge in row and detail (terminology table below). (S)~~
+3. **Fixed:** tiles count requests by verdict (Attacks caught, Blocked, Data protected = hidden + withheld) with (i)
+   definitions; the chart stacks the same groups. ~~**Overview numbers disagree.** In one 24 h view: 26 prompt injections (Attacks tile), 28 (What the controls
    caught), 31 messages quarantined (Data protected). Quarantines count in two tiles. One number per concept with an
    (i) definition: attacks = requests where an attack was caught; data protected = values hidden + values withheld.
-   "12 requests blocked" covers scope, budget and identity, which are not attacks: give it its own line. (S/M)
+   "12 requests blocked" covers scope, budget and identity, which are not attacks: give it its own line. (S/M)~~
 4. **Live demo shows that an attack was stopped, not what it wanted.** The worst-case run ends with "Done." and one
    table row. Add a short "What the attacker tried" callout above the findings: a safe, truncated excerpt of the
    quarantined text (never the raw payload into the audit log) and "Without FlowGuard: the agent would have …". (M)

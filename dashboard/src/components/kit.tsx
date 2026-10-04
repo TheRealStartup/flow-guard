@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import type { Action, AuditEvent, Outcome, Verdict } from "@/lib/api";
 import { ACTION_LABEL, OUTCOME_LABEL } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -200,5 +200,22 @@ export function KV({ rows }: { rows: [string, React.ReactNode][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** An (i) with a definition: shown on hover and on keyboard focus. */
+export function InfoTip({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={cn("group relative inline-flex normal-case", className)}>
+      <span tabIndex={0} role="img" aria-label={text} className="rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+        <Info className="size-4" />
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute top-6 left-1/2 z-20 hidden w-64 -translate-x-1/2 rounded-md border bg-card px-3 py-2 text-left text-sm font-normal tracking-normal text-foreground shadow-lg group-focus-within:block group-hover:block"
+      >
+        {text}
+      </span>
+    </span>
   );
 }
