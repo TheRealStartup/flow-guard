@@ -8,7 +8,7 @@ enforces data classes and information barriers, caps budgets, and writes a tampe
 
 ## Fastest way to see it (no setup)
 
-1. **Watch the submission video:** VIDEO_LINK
+1. **Watch the submission video** (linked in our submission form).
 2. **Open the live dashboard:** https://flowguard.91.98.65.108.sslip.io
    User and password are in our submission form.
 
