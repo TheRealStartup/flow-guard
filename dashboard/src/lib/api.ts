@@ -15,6 +15,8 @@ export type Decision = {
   ms: number;
   score: number | null;
   excerpt: string | null;
+  token?: string | null; // the reversible token a redaction put in place of the value
+  source?: string | null; // the tool call a tool result answers, e.g. "read_file README.md"
 };
 
 export type ToolCall = {

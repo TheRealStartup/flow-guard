@@ -40,6 +40,8 @@ class Decision:
     ms: float = 0.0
     score: float | None = None
     excerpt: str | None = None  # the text that triggered it, always masked; see safe_excerpt()
+    token: str | None = None  # the reversible token a redaction put in place of the value (never the value)
+    source: str | None = None  # where the text came from, e.g. "read_file README.md" (tool results only)
 
 
 @dataclass
@@ -82,6 +84,22 @@ def safe_excerpt(text: str, focus: str | None = None, width: int = 180) -> str:
     start = max(0, i - width // 3) if i >= 0 else 0
     cut = text[start : start + width]
     return ("…" if start > 0 else "") + cut + ("…" if start + width < len(text) else "")
+
+
+SOURCE_ARGS = ("file_path", "path", "client_id", "customer_id", "query", "url", "command", "pattern")
+
+
+def _source(msg: dict[str, Any], claimed: dict[str, tuple[str, str]]) -> str | None:
+    """Which tool call a tool result answers, for the dashboard: "read_file README.md", "get_client_file NW-2041"."""
+    if msg.get("role") != "tool" or msg.get("tool_call_id") not in claimed:
+        return None
+    name, args = claimed[msg["tool_call_id"]]
+    try:
+        a = json.loads(args or "{}")
+    except ValueError:
+        a = {}
+    arg = next((str(a[k]) for k in SOURCE_ARGS if isinstance(a, dict) and a.get(k) not in (None, "")), "")
+    return f"{name} {safe_excerpt(arg, width=80)}".strip()
 
 
 def _with_excerpt(ds: list[Decision], text: str) -> list[Decision]:
@@ -154,9 +172,11 @@ class Engine:
             action = p.action(span.control)
             if action == "allow":
                 continue
-            out.append(Decision(span.control, action, where, f"{span.kind} detected"))
+            d = Decision(span.control, action, where, f"{span.kind} detected")
+            out.append(d)
             if action == "redact":
-                text = text[: span.start] + s.tokenize(span.kind, span.value, label=span.certain) + text[span.end :]
+                d.token = s.tokenize(span.kind, span.value, label=span.certain)
+                text = text[: span.start] + d.token + text[span.end :]
         return text, out[::-1]
 
     def _barrier(self, p: Policy, s: Session, text: str, where: str) -> tuple[str, list[Decision]]:
@@ -379,6 +399,7 @@ class Engine:
                    for m in msgs if m.get("role") == "assistant" for tc in m.get("tool_calls") or []}
         limit = p.model_limit(model)
         to_judge: list[tuple[dict[str, Any], str, str, int]] = []  # (message, hash, where, class rank)
+        sources: dict[str, str | None] = {}  # message hash -> the tool call it answers
         for i, msg in enumerate(msgs):
             where = WHERE.get(msg.get("role", ""), "prompt")
             h = hashlib.sha256(json.dumps(msg, sort_keys=True).encode()).hexdigest()
@@ -388,6 +409,8 @@ class Engine:
                 msg["content"] = s.quarantined[h]
             # Every message, old ones too, is classified on every request: a lowered limit applies to the whole history.
             src, rank = self._source_class(p, s, msg, claimed), -1
+            sources[h] = label = _source(msg, claimed)
+            mark = len(ex.decisions)
             for get, set_ in list(_text_parts(msg)):
                 text, ds0 = self._barrier(p, s, get(), where) if where in ("tool_result", "prompt") else (get(), [])
                 text, dsc, r = self._class_gate(p, s, text, src, limit, where, f"model {model}")
@@ -411,6 +434,8 @@ class Engine:
                 blocked = next((d for d in ds + ds2 if d.action == "block"), None)
                 if blocked:
                     return stop(blocked)
+            for d in ex.decisions[mark:]:
+                d.source = d.source or label
             if h not in s.judged and where in ("prompt", "tool_result") and msg.get("role") != "system":
                 to_judge.append((msg, h, where, rank))
 
@@ -424,7 +449,7 @@ class Engine:
                 return stop(Decision("injection.jev", "block", where,
                                      f"{p.level(top)} content may not be sent to the external injection check (limit {cap}), "
                                      "and no other check is authorised for it", excerpt=f"[WITHHELD: {p.barrier_message}]"))
-            blocked = await self._judge_all(p, s, ex, [(m, h, w) for m, h, w, _ in to_judge])
+            blocked = await self._judge_all(p, s, ex, [(m, h, w) for m, h, w, _ in to_judge], sources)
             if blocked:
                 return stop(blocked)
             s.judged.update(h for _, h, _, _ in to_judge)
@@ -433,7 +458,7 @@ class Engine:
         ex.controls_ms = (time.perf_counter() - t0) * 1000
         return body, ex
 
-    async def _judge_all(self, p: Policy, s: Session, ex: Exchange, items) -> Decision | None:
+    async def _judge_all(self, p: Policy, s: Session, ex: Exchange, items, sources: dict[str, str | None] | None = None) -> Decision | None:
         c = p.control("injection.jev")
         threshold, timeout = float(c.get("threshold", 0.8)), float(c.get("timeout_s", 5))
 
@@ -490,6 +515,9 @@ class Engine:
             return [d for d in ds if d]
 
         results = await asyncio.gather(*(one(*it) for it in items))
+        for (_, h, _), r in zip(items, results):
+            for d in r:
+                d.source = d.source or (sources or {}).get(h)
         ds = [d for r in results for d in r]
         ex.decisions += ds
         return next((d for d in ds if d.action == "block"), None)

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Gauge, ListFilter, Radio, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
+import { ArrowRight, Gauge, Radio, RefreshCw, ShieldCheck, ShieldAlert, Table2, Users } from "lucide-react";
 import { usePoll, type Health, type Verify } from "@/lib/api";
 import { useAuditEvents } from "@/lib/stream";
 import { CONTROLS, OUTCOME_LABEL, blockTitle, controlName, eventId, eventTitle, shortHash, utcDate, utcTime } from "@/lib/format";
@@ -40,13 +40,6 @@ export default function OverviewPage() {
       <PageHeader
         title="Overview"
         subtitle="What the gateway checked, hid, stopped and let through, live from the audit log."
-        actions={
-          <Link href="/audit">
-            <span className="inline-flex h-11 items-center gap-2 rounded-md border bg-card px-4 text-[15px] hover:bg-accent">
-              <ListFilter className="size-5" /> Open audit trail
-            </span>
-          </Link>
-        }
       />
 
       {/* One filter row scopes everything below it. */}

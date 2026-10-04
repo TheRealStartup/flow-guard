@@ -100,3 +100,20 @@ def test_debugging_a_production_log_keeps_client_data_from_the_model_vendor(gw):
         assert real not in seen, f"{real} reached the model"
     assert "ccy=EURO" in seen and "not an ISO 4217 code" in seen  # the bug itself stays visible: the model can still debug
     assert ("pii.iban", "redact") in decisions and ("pii.card", "redact") in decisions
+
+
+def test_each_redaction_names_its_own_token_and_source(gw):
+    """The dashboard shows what the model saw instead of each value, and which file it came from: per decision, exact."""
+    gw.upstream.next_reply = {"text": "ok"}
+    log = developer.run_tool("read_file", {"path": "logs/payments-nightly.log"})
+    msgs = [{"role": "user", "content": "what failed?"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t", "type": "function", "function": {
+                "name": "read_file", "arguments": json.dumps({"path": "logs/payments-nightly.log"})}}]},
+            {"role": "tool", "tool_call_id": "t", "content": log}]
+    ds = [d for d in gw.chat("devon", msgs, tools=developer.TOOLS).json()["acl"]["decisions"] if d["action"] == "redact"]
+    sent = json.dumps(gw.upstream.seen)
+    assert {d["control"] for d in ds} >= {"pii.iban", "pii.card"}
+    assert len({d["token"] for d in ds}) == len(ds)  # three IBANs and a card: four different tokens, none repeated
+    for d in ds:
+        assert d["token"] in sent and d["token"].startswith("[[" + d["reason"].split()[0])  # the token the model really got
+        assert d["source"] == "read_file logs/payments-nightly.log"

@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { ArrowRight, Bot, Check, CornerDownLeft, Database, FlaskConical, Info, ListTree, Play, RotateCcw, ShieldCheck, User, X } from "lucide-react";
 import { getJSON, type Policy, type TryResult } from "@/lib/api";
@@ -58,16 +60,6 @@ export default function DemoPage() {
       <PageHeader
         title="Live policy demo"
         subtitle="Define what your AI agents can see. Stop sensitive data before it enters their context."
-        actions={
-          <>
-            <Btn onClick={() => setResult(null)} disabled={!result || busy}>
-              <RotateCcw className="size-5" /> Reset demo
-            </Btn>
-            <Btn variant="primary" onClick={run} disabled={busy || !prompt.trim()}>
-              <Play className="size-5" /> {busy ? "Running…" : "Run request"}
-            </Btn>
-          </>
-        }
       />
 
       <StatRow>
@@ -115,9 +107,16 @@ export default function DemoPage() {
                 aria-label="User request"
                 className="min-w-0 flex-1 resize-none rounded-md border border-input bg-muted px-4 py-3 text-[17px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               />
-              <Btn variant="primary" onClick={run} disabled={busy || !prompt.trim()}>
-                <Play className="size-5" /> {busy ? "Running…" : "Run request"}
-              </Btn>
+              <div className="flex flex-col gap-2">
+                <Btn variant="primary" onClick={run} disabled={busy || !prompt.trim()}>
+                  <Play className="size-5" /> {busy ? "Running…" : "Run request"}
+                </Btn>
+                {result && !busy && (
+                  <Btn onClick={() => setResult(null)}>
+                    <RotateCcw className="size-5" /> Clear result
+                  </Btn>
+                )}
+              </div>
             </div>
             <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
               <span>Pick an example or type your own request · Ctrl + Enter to run</span>
@@ -183,7 +182,6 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
   const { a } = result;
   const BANNER = { block: "bg-block-soft text-block", redact: "bg-redact-soft text-redact", flag: "bg-flag-soft text-flag", allow: "bg-allow-soft text-allow", neutral: "bg-muted" };
   const stopped = a.actions.filter((x) => x.status === "stopped");
-  const tokenized = a.findings.filter((f) => f.decision === "Tokenized").length;
 
   return (
     <>
@@ -224,7 +222,10 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
             {a.findings.map((f, i) => (
               <tr key={i} className="border-b align-top last:border-b-0" title={f.reason}>
                 <td className="py-3 pl-6">{f.found}</td>
-                <td className="py-3 pr-3 text-muted-foreground">{f.where}</td>
+                <td className="py-3 pr-3 text-muted-foreground">
+                  {f.where}
+                  {f.source && <div className="font-mono text-xs break-all">{f.source}</div>}
+                </td>
                 <td className="py-3 pr-3">
                   <Pill tone={f.tone} dot={false}>
                     {f.decision}
@@ -258,18 +259,18 @@ function Result({ result }: { result: { run: TryResult; a: Analysis } }) {
 
       <div className="grid grid-cols-4 gap-4 border-t bg-muted px-6 py-4 text-sm">
         <Checkpoint title="Actions checked" note={`${a.actions.filter((x) => x.status !== "stopped").length} allowed · ${a.stopped} stopped`} />
-        <Checkpoint title="Results filtered" note={`${tokenized} tokenized · ${a.quarantined} quarantined`} />
-        <Checkpoint title="Answer checked" note="Model text redacted too" />
+        <Checkpoint title="Results filtered" note={`${a.hidden} tokenized · ${a.quarantined} quarantined${a.withheld ? ` · ${a.withheld} withheld` : ""}`} />
+        <Checkpoint title="Answer checked" note={a.answerRedacted ? "Values in the answer tokenized too" : "Nothing to hide in the answer"} />
         <Checkpoint title="Outbound" note={a.leftOrg.length ? `Sent via ${a.leftOrg.join(", ")}` : "Nothing left the organisation"} />
       </div>
 
       <div className="border-t px-6 py-5">
         <SectionLabel className="mb-2">AI response · as the model wrote it</SectionLabel>
-        <p className="text-[16px] whitespace-pre-wrap">{a.answer ?? <span className="text-muted-foreground">No final answer (the run ended on a tool call or a block).</span>}</p>
+        {a.answer ? <Markdown text={a.answer} /> : <p className="text-muted-foreground">No final answer (the run ended on a tool call or a block).</p>}
         <div className="mt-4 flex items-center gap-4">
           <p className="flex-1 text-sm text-muted-foreground">
-            The tool did read these values; the gateway kept them in its token vault and gave the model placeholders. Real values are only put back for tools the
-            policy allows.
+            {a.hidden > 0 &&
+              "The tool did read these values; the gateway kept them in its token vault and gave the model placeholders. Real values are only put back for tools the policy allows."}
           </p>
           <Link href={`/audit?session=${encodeURIComponent(result.run.session)}`}>
             <Btn>
@@ -341,3 +342,17 @@ function ControlsTable({ policy, fired }: { policy: Policy | null; fired: Set<st
     </Panel>
   );
 }
+
+/** The model's answer is Markdown (tables, lists, bold); render it instead of showing the raw syntax. */
+const Markdown = ({ text }: { text: string }) => (
+  <div
+    className={cn(
+      "text-[16px] leading-relaxed [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[14px] [&_h1]:mt-4 [&_h1]:text-xl [&_h1]:font-semibold",
+      "[&_h2]:mt-4 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-2",
+      "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6",
+      "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[15px] [&_td]:border-b [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b-2 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium",
+    )}
+  >
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+  </div>
+);
